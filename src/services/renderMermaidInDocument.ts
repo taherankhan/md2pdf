@@ -44,20 +44,28 @@ export async function renderMermaidInDocument(doc: Document): Promise<void> {
       theme: 'neutral',
       securityLevel: 'loose',
       fontFamily: 'Inter, system-ui, sans-serif',
+      suppressErrorRendering: true,
     });
     bundledInitialized = true;
   }
 
-  try {
-    await mermaid.run({ nodes, suppressErrors: false });
-  } catch (error) {
-    console.error('Mermaid render failed:', error);
-    nodes.forEach((el) => {
-      if (!el.querySelector('svg')) {
-        el.innerHTML =
-          '<pre style="color:#b91c1c;font-size:12px;">Diagram could not be rendered.</pre>';
+  for (const node of nodes) {
+    try {
+      let rawText = node.textContent || node.innerText || '';
+      rawText = rawText
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"');
+      node.textContent = rawText.trim();
+      await mermaid.run({ nodes: [node], suppressErrors: true });
+    } catch (error) {
+      console.warn('Mermaid diagram render failed:', error);
+      if (!node.querySelector('svg')) {
+        node.innerHTML =
+          '<pre style="color:#b91c1c;font-size:12px;padding:8px;background:rgba(239,68,68,0.1);border-radius:4px;">Diagram syntax error - check syntax</pre>';
       }
-    });
+    }
   }
 }
 
@@ -75,9 +83,22 @@ import mermaid from '${MERMAID_CDN}';
 try {
   mermaid.initialize(${MERMAID_INIT});
   const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
-  if (nodes.length) await mermaid.run({ nodes, suppressErrors: false });
+  for (const node of nodes) {
+    try {
+      let text = node.textContent || node.innerText || '';
+      text = text
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"');
+      node.textContent = text.trim();
+      await mermaid.run({ nodes: [node], suppressErrors: true });
+    } catch (e) {
+      console.warn('[preview] Mermaid node render failed', e);
+    }
+  }
 } catch (err) {
-  console.error('[preview] Mermaid failed', err);
+  console.error('[preview] Mermaid global failed', err);
 }
 </script>`;
 }
@@ -88,8 +109,21 @@ try {
 export function mermaidHtmlExportScriptTag(): string {
   return `<script type="module">
 import mermaid from '${MERMAID_CDN}';
-mermaid.initialize(${MERMAID_INIT});
-const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
-if (nodes.length) await mermaid.run({ nodes });
+try {
+  mermaid.initialize(${MERMAID_INIT});
+  const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
+  for (const node of nodes) {
+    try {
+      let text = node.textContent || node.innerText || '';
+      text = text
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"');
+      node.textContent = text.trim();
+      await mermaid.run({ nodes: [node], suppressErrors: true });
+    } catch (e) {}
+  }
+} catch (err) {}
 </script>`;
 }
