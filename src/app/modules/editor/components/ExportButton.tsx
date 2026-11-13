@@ -1,5 +1,9 @@
 import { FC, useEffect, useRef, useState } from 'react';
-import { generatePDFFromElement, generatePDFFromMarkdown } from '../../../../services/pdfGenerator';
+import {
+    generatePDFFromElement,
+    generatePDFFromMarkdown,
+    exportViaBrowserPrint,
+} from '../../../../services/pdfGenerator';
 import {
     getPdfExportUserMessage,
     PDF_MAX_MARKDOWN_CHARS,
@@ -83,6 +87,14 @@ const ExportButton: FC<ExportButtonProps> = ({
                         themeId: effectiveThemeId,
                     });
                 }
+            } else if (format === 'print') {
+                const previewRoot = previewRef?.current;
+                await exportViaBrowserPrint({
+                    element: previewRoot,
+                    markdown,
+                    themeId: effectiveThemeId,
+                    title: base,
+                });
             } else if (format === 'markdown') {
                 downloadTextFile(markdown, `${base}.md`, meta.mime);
             } else {
@@ -90,7 +102,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                 downloadTextFile(html, `${base}.html`, meta.mime);
             }
         } catch (error) {
-            if (format === 'pdf') {
+            if (format === 'pdf' || format === 'print') {
                 toast.error(getPdfExportUserMessage(error), { autoClose: 8000 });
             } else {
                 toast.error('Export failed. Please try again.', { autoClose: 5000 });
@@ -157,7 +169,7 @@ const ExportButton: FC<ExportButtonProps> = ({
 
             {menuOpen && (
                 <div className="export-menu-dropdown" role="listbox" aria-label="Export format">
-                    {(['pdf', 'markdown', 'html'] as const).map((format) => {
+                    {(['pdf', 'print', 'markdown', 'html'] as const).map((format) => {
                         const meta = EXPORT_FORMAT_META[format];
                         const active = selectedFormat === format;
                         return (

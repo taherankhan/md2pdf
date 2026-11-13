@@ -45,9 +45,174 @@ function assertCanvasWithinLimits(canvas: HTMLCanvasElement): void {
   if (pixels > PDF_MAX_CANVAS_PIXELS) {
     throw new PdfExportError(
       'MEMORY_LIMIT',
-      `Document renders too large for PDF export. Shorten content or reduce images (render size: ${Math.round(pixels / 1_000_000)}M pixels).`
+      `Document renders too large for direct PDF export. Try "Print to PDF (Vector)" from the export menu (render size: ${Math.round(pixels / 1_000_000)}M pixels).`
     );
   }
+}
+
+/**
+ * Calculates adaptive rendering scale based on container height in pixels.
+ * Shorter documents get ultra-crisp Retina quality (scale 2), while longer
+ * documents scale down to fit safely within browser canvas dimensions and RAM.
+ */
+function getAdaptiveScale(elementHeightPx: number): number {
+  if (elementHeightPx <= 7000) {
+    return 2.0; // 1-5 pages: Retina ultra-crisp
+  }
+  if (elementHeightPx <= 16000) {
+    return 1.5; // 6-14 pages: High DPI crisp
+  }
+  if (elementHeightPx <= 30000) {
+    return 1.25; // 15-26 pages: High performance
+  }
+  return 1.0; // 27+ pages: 1:1 scale to avoid exceeding browser limits
+}
+
+/**
+ * Slices a master canvas into discrete A4 page canvases and appends them to jsPDF.
+ * This ensures each page only stores its own single slice (typically 150KB - 300KB)
+ * instead of the entire document's multi-megabyte image duplicated on every page.
+ */
+function addCanvasToPdfInPageSlices(
+  pdf: jsPDF,
+  canvas: HTMLCanvasElement,
+  themeBgColor: string,
+  imgWidthMm: number = 210,
+  pageHeightMm: number = 297,
+  isFirstChunk: boolean = true
+): void {
+  const a4Ratio = pageHeightMm / imgWidthMm;
+  const pageHeightPx = Math.floor(canvas.width * a4Ratio);
+
+  let currentY = 0;
+  let pageCount = 0;
+
+  const sliceCanvas = document.createElement('canvas');
+  sliceCanvas.width = canvas.width;
+  const sliceCtx = sliceCanvas.getContext('2d');
+
+  while (currentY < canvas.height) {
+    const sliceHeight = Math.min(pageHeightPx, canvas.height - currentY);
+    sliceCanvas.height = sliceHeight;
+
+    if (sliceCtx) {
+      sliceCtx.fillStyle = themeBgColor || '#ffffff';
+      sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+      sliceCtx.drawImage(
+        canvas,
+        0, currentY, canvas.width, sliceHeight,
+        0, 0, canvas.width, sliceHeight
+      );
+
+      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+      const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
+
+      if (!isFirstChunk || pageCount > 0) {
+        pdf.addPage();
+      }
+
+      pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+    }
+
+    currentY += sliceHeight;
+    pageCount++;
+  }
+
+  // Cleanup offscreen slice canvas
+  sliceCanvas.width = 0;
+  sliceCanvas.height = 0;
+}
+
+/**
+ * Renders an element to jsPDF in either a single pass or sequential chunks
+ * if the content is exceptionally tall, preventing browser canvas dimension overflow.
+ */
+async function renderElementToPdf(
+  pdf: jsPDF,
+  wrapperElement: HTMLElement,
+  containerContentEl: HTMLElement,
+  themeBgColor: string,
+  scale: number
+): Promise<void> {
+  const CHUNK_HEIGHT_LIMIT = 18000;
+  const totalHeight = wrapperElement.scrollHeight;
+  const children = Array.from(containerContentEl.children) as HTMLElement[];
+
+  if (totalHeight <= CHUNK_HEIGHT_LIMIT || children.length <= 1) {
+    const canvas = await withTimeout(
+      html2canvas(wrapperElement, {
+        scale,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        windowWidth: 794,
+        width: 794,
+        backgroundColor: themeBgColor,
+      }),
+      PDF_EXPORT_TIMEOUT_MS
+    );
+
+    assertCanvasWithinLimits(canvas);
+    addCanvasToPdfInPageSlices(pdf, canvas, themeBgColor);
+    canvas.width = 0;
+    canvas.height = 0;
+    return;
+  }
+
+  // Multi-chunk rendering for large documents: group children into chunks
+  const chunks: HTMLElement[][] = [];
+  let currentGroup: HTMLElement[] = [];
+  let accumulatedHeight = 0;
+
+  for (const child of children) {
+    const h = Math.max(child.offsetHeight, 40);
+    if (accumulatedHeight + h > CHUNK_HEIGHT_LIMIT && currentGroup.length > 0) {
+      chunks.push(currentGroup);
+      currentGroup = [child];
+      accumulatedHeight = h;
+    } else {
+      currentGroup.push(child);
+      accumulatedHeight += h;
+    }
+  }
+  if (currentGroup.length > 0) {
+    chunks.push(currentGroup);
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    const activeChunk = chunks[i];
+
+    // Hide children that are not in this chunk
+    children.forEach((c) => {
+      c.style.display = activeChunk.includes(c) ? '' : 'none';
+    });
+
+    await new Promise((r) => setTimeout(r, 80));
+
+    const chunkCanvas = await withTimeout(
+      html2canvas(wrapperElement, {
+        scale,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        windowWidth: 794,
+        width: 794,
+        backgroundColor: themeBgColor,
+      }),
+      PDF_EXPORT_TIMEOUT_MS
+    );
+
+    assertCanvasWithinLimits(chunkCanvas);
+    addCanvasToPdfInPageSlices(pdf, chunkCanvas, themeBgColor, 210, 297, i === 0);
+
+    chunkCanvas.width = 0;
+    chunkCanvas.height = 0;
+  }
+
+  // Restore visibility
+  children.forEach((c) => {
+    c.style.display = '';
+  });
 }
 
 function mapRenderError(error: unknown): never {
@@ -242,51 +407,17 @@ export const generatePDFFromMarkdown = async (
 
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const canvas = await withTimeout(
-      html2canvas(container, {
-        scale: 1.5,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: theme.colors.background,
-        logging: false,
-        windowWidth: 794,
-        windowHeight: container.scrollHeight,
-      }),
-      PDF_EXPORT_TIMEOUT_MS
-    );
+    const totalHeight = container.scrollHeight;
+    const scale = getAdaptiveScale(totalHeight);
 
-    assertCanvasWithinLimits(canvas);
-    
-    // Calculate PDF dimensions
-    const imgWidth = 210; // A4 width in mm
-    const pageHeight = 297; // A4 height in mm
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
       compress: true,
     });
-    
-    let heightLeft = imgHeight;
-    let position = 0;
-    
-    // Convert canvas to image with reduced quality for smaller file size
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
-    
-    // Add first page
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    
-    // Add additional pages if needed
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
-    
+
+    await renderElementToPdf(pdf, container, container, theme.colors.background, scale);
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
     mapRenderError(error);
@@ -489,49 +620,19 @@ export const generatePDFFromElement = async (
       throw new PdfExportError('RENDER_FAILED', 'Print layout not found.');
     }
 
-    const canvas = await withTimeout(
-      html2canvas(printWrapper, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        windowWidth: 794,
-        width: 794,
-        backgroundColor: theme.colors.background,
-      }),
-      PDF_EXPORT_TIMEOUT_MS
-    );
+    const totalHeight = printWrapper.scrollHeight;
+    const scale = getAdaptiveScale(totalHeight);
 
-    assertCanvasWithinLimits(canvas);
-
-    // Calculate PDF dimensions
-    const imgWidth = 210; // A4 width in mm
-    const pageHeight = 297; // A4 height in mm
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
       compress: true,
     });
-    
-    let heightLeft = imgHeight;
-    let position = 0;
-    
-    // Add first page
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    
-    // Add additional pages if needed
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
-    
+
+    const contentEl = sandboxDoc.getElementById('pdf-content') || printWrapper;
+    await renderElementToPdf(pdf, printWrapper, contentEl, theme.colors.background, scale);
+
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
     mapRenderError(error);
@@ -539,5 +640,150 @@ export const generatePDFFromElement = async (
     if (document.body.contains(sandboxFrame)) {
         document.body.removeChild(sandboxFrame);
     }
+  }
+};
+
+export interface PrintOptions {
+  element?: HTMLElement | null;
+  markdown?: string;
+  themeId?: string;
+  title?: string;
+}
+
+/**
+ * Triggers native browser print dialog (Save as PDF).
+ * Produces 100% vector PDFs with selectable text, clickable links, perfect CSS breaks,
+ * and zero memory limits — capable of exporting documents of unlimited length (100+ pages).
+ */
+export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void> => {
+  const theme = getTheme(options.themeId || 'professional');
+  const title = options.title || 'document';
+
+  let printHtml = '';
+  let customStyles = '';
+
+  const iframe = options.element?.querySelector('iframe');
+  if (iframe && iframe.contentDocument) {
+    const previewContent = iframe.contentDocument.getElementById('preview-content');
+    if (previewContent) {
+      printHtml = previewContent.innerHTML;
+    } else {
+      printHtml = iframe.contentDocument.body.innerHTML;
+    }
+
+    const styleElements = iframe.contentDocument.head.querySelectorAll('style, link[rel="stylesheet"]');
+    const stylePromises = Array.from(styleElements).map(async (style) => {
+      if (style.tagName.toLowerCase() === 'style') return style.innerHTML;
+      if (style.tagName.toLowerCase() === 'link' && (style as HTMLLinkElement).rel === 'stylesheet') {
+        try {
+          const res = await fetch((style as HTMLLinkElement).href);
+          return await res.text();
+        } catch {
+          return '';
+        }
+      }
+      return '';
+    });
+    const loaded = await Promise.all(stylePromises);
+    customStyles = loaded.join('\n');
+  } else if (options.markdown) {
+    printHtml = applyThemeToHTML(parseMarkdown(options.markdown), theme);
+  }
+
+  const printFrame = document.createElement('iframe');
+  printFrame.style.position = 'fixed';
+  printFrame.style.right = '0';
+  printFrame.style.bottom = '0';
+  printFrame.style.width = '0';
+  printFrame.style.height = '0';
+  printFrame.style.border = '0';
+  printFrame.style.visibility = 'hidden';
+  document.body.appendChild(printFrame);
+
+  try {
+    const printDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (!printDoc) {
+      throw new Error('Could not access print frame.');
+    }
+
+    printDoc.open();
+    printDoc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 10mm 15mm;
+            font-family: ${theme.fonts.body};
+            color: ${theme.colors.text};
+            background-color: #ffffff;
+            font-size: ${theme.fontSize.base};
+            line-height: ${theme.spacing.lineHeight};
+          }
+          @page {
+            size: A4 portrait;
+            margin: 15mm 15mm 15mm 15mm;
+          }
+          @media print {
+            body {
+              background-color: #ffffff !important;
+              color: #111827 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            pre, code, table, tr, img, blockquote, .mermaid {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            h1, h2, h3, h4, h5, h6 {
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+            }
+          }
+          /* Headings */
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            line-height: 1.25;
+          }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
+          th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
+          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
+          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; overflow-x: auto; }
+          code { font-family: ${theme.fonts.code}; }
+          .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
+          .mermaid svg { max-width: 100%; height: auto; }
+          ${MERMAID_DIAGRAM_STYLES}
+          ${customStyles}
+        </style>
+      </head>
+      <body>
+        <div id="print-root">
+          ${printHtml}
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/prism.min.js"></script>
+      </body>
+      </html>
+    `);
+    printDoc.close();
+
+    await renderMermaidInDocument(printDoc);
+    await waitForMermaidPaint(400);
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    printFrame.contentWindow?.focus();
+    printFrame.contentWindow?.print();
+  } finally {
+    setTimeout(() => {
+      if (document.body.contains(printFrame)) {
+        document.body.removeChild(printFrame);
+      }
+    }, 5000);
   }
 };

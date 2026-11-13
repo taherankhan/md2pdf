@@ -5,7 +5,7 @@ import {
 } from '../../../../services/renderMermaidInDocument';
 import { applyThemeToHTML, getTheme } from '../../../../themes/themeConfig';
 
-export type ExportFormat = 'pdf' | 'markdown' | 'html';
+export type ExportFormat = 'pdf' | 'print' | 'markdown' | 'html';
 
 const sanitizeBasename = (s: string) =>
   s.trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 80) || 'document';
@@ -72,10 +72,16 @@ export const EXPORT_FORMAT_META: Record<
   { label: string; extension: string; mime: string; icon: string }
 > = {
   pdf: {
-    label: 'PDF',
+    label: 'PDF (Download)',
     extension: 'pdf',
     mime: 'application/pdf',
     icon: 'bi-file-earmark-pdf',
+  },
+  print: {
+    label: 'Print to PDF (Vector)',
+    extension: 'pdf',
+    mime: 'application/pdf',
+    icon: 'bi-printer',
   },
   markdown: {
     label: 'Markdown',

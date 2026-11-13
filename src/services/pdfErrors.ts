@@ -1,6 +1,6 @@
-export const PDF_MAX_MARKDOWN_CHARS = 400_000;
-export const PDF_EXPORT_TIMEOUT_MS = 120_000;
-export const PDF_MAX_CANVAS_PIXELS = 16_000_000;
+export const PDF_MAX_MARKDOWN_CHARS = 1_500_000;
+export const PDF_EXPORT_TIMEOUT_MS = 180_000;
+export const PDF_MAX_CANVAS_PIXELS = 80_000_000;
 
 export type PdfExportErrorCode =
   | 'DOCUMENT_TOO_LARGE'
@@ -25,17 +25,17 @@ export function getPdfExportUserMessage(error: unknown): string {
       case 'DOCUMENT_TOO_LARGE':
         return error.message;
       case 'EXPORT_TIMEOUT':
-        return 'PDF export timed out. Try a shorter document or fewer images.';
+        return 'PDF export timed out. For very large documents, try "Print to PDF (Vector)" in the export menu.';
       case 'MEMORY_LIMIT':
-        return 'This document is too large to render as PDF in the browser. Shorten content or split into sections.';
+        return 'Browser canvas limit reached for direct export. Please use "Print to PDF (Vector)" from the export menu — it supports unlimited pages.';
       case 'RENDER_FAILED':
-        return 'PDF rendering failed. Check images and complex formatting, then try again.';
+        return 'PDF rendering failed. Check images and formatting, or try "Print to PDF (Vector)".';
       default:
-        return 'PDF export failed. Please try again.';
+        return 'PDF export failed. Try "Print to PDF (Vector)" from the export menu.';
     }
   }
   if (error instanceof Error && /out of memory|allocation failed/i.test(error.message)) {
-    return 'Browser ran out of memory while building the PDF. Use a shorter document.';
+    return 'Browser ran out of memory. Please use "Print to PDF (Vector)" from the export menu for large files.';
   }
-  return 'PDF export failed. Please try again.';
+  return 'PDF export failed. Please try again or use "Print to PDF (Vector)".';
 }
