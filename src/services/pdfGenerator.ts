@@ -582,6 +582,7 @@ export const generatePDFFromElement = async (
 ): Promise<void> => {
   const opts = { ...defaultOptions, ...options };
   const theme = getTheme(opts.themeId || 'professional');
+  const margins = opts.margins || DEFAULT_PDF_MARGINS;
 
   // Handle Iframe source (PreviewPane refactor)
   let sourceElement: HTMLElement = element;
