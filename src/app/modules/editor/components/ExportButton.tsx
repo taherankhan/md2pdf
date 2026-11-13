@@ -20,6 +20,7 @@ import {
     ExportFormat,
     resolveExportBasename,
 } from '../lib/exportDocument';
+import { PdfSettingsModal } from './PdfSettingsModal';
 
 interface ExportButtonProps {
     markdown: string;
@@ -238,146 +239,14 @@ const ExportButton: FC<ExportButtonProps> = ({
                 </div>
             )}
 
-            {settingsOpen && (
-                <div className="pdf-settings-backdrop" onClick={() => setSettingsOpen(false)}>
-                    <div className="pdf-settings-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="pdf-settings-header">
-                            <h5>
-                                <i className="bi bi-aspect-ratio" /> PDF Margins & Page Settings
-                            </h5>
-                            <button
-                                type="button"
-                                className="btn-close btn-close-white"
-                                onClick={() => setSettingsOpen(false)}
-                                aria-label="Close"
-                            />
-                        </div>
-                        <div className="pdf-settings-body">
-                            <div className="pdf-settings-section">
-                                <label className="pdf-settings-label">Margin Presets</label>
-                                <div className="pdf-presets-group">
-                                    <button
-                                        type="button"
-                                        className={`preset-btn ${margins.top === 15 && margins.bottom === 15 && margins.left === 15 && margins.right === 15 ? 'active' : ''}`}
-                                        onClick={() => setMargins({ top: 15, right: 15, bottom: 15, left: 15 })}
-                                    >
-                                        Normal (15mm)
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`preset-btn ${margins.top === 8 && margins.bottom === 8 && margins.left === 8 && margins.right === 8 ? 'active' : ''}`}
-                                        onClick={() => setMargins({ top: 8, right: 8, bottom: 8, left: 8 })}
-                                    >
-                                        Compact (8mm)
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`preset-btn ${margins.top === 25 && margins.bottom === 25 && margins.left === 25 && margins.right === 25 ? 'active' : ''}`}
-                                        onClick={() => setMargins({ top: 25, right: 25, bottom: 25, left: 25 })}
-                                    >
-                                        Spacious (25mm)
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="pdf-settings-section">
-                                <label className="pdf-settings-label">All 4-Side Margins (in millimeters)</label>
-                                <div className="margins-inputs-grid">
-                                    <div className="margin-field">
-                                        <label>Top</label>
-                                        <div className="input-group-mm">
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={60}
-                                                value={margins.top}
-                                                onChange={(e) => setMargins({ ...margins, top: Math.max(0, Number(e.target.value)) })}
-                                            />
-                                            <span>mm</span>
-                                        </div>
-                                    </div>
-                                    <div className="margin-field">
-                                        <label>Right</label>
-                                        <div className="input-group-mm">
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={60}
-                                                value={margins.right}
-                                                onChange={(e) => setMargins({ ...margins, right: Math.max(0, Number(e.target.value)) })}
-                                            />
-                                            <span>mm</span>
-                                        </div>
-                                    </div>
-                                    <div className="margin-field">
-                                        <label>Bottom</label>
-                                        <div className="input-group-mm">
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={60}
-                                                value={margins.bottom}
-                                                onChange={(e) => setMargins({ ...margins, bottom: Math.max(0, Number(e.target.value)) })}
-                                            />
-                                            <span>mm</span>
-                                        </div>
-                                    </div>
-                                    <div className="margin-field">
-                                        <label>Left</label>
-                                        <div className="input-group-mm">
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={60}
-                                                value={margins.left}
-                                                onChange={(e) => setMargins({ ...margins, left: Math.max(0, Number(e.target.value)) })}
-                                            />
-                                            <span>mm</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pdf-settings-section smart-breaks-section">
-                                <div className="form-check form-switch">
-                                    <input
-                                        className="form-check-input"
-                                        type="checkbox"
-                                        id="smartPageBreaksToggle"
-                                        checked={smartPageBreaks}
-                                        onChange={(e) => setSmartPageBreaks(e.target.checked)}
-                                    />
-                                    <label className="form-check-label" htmlFor="smartPageBreaksToggle">
-                                        <strong>Smart Page Breaks</strong>
-                                        <span className="d-block text-muted small">
-                                            Prevents cutting headings, code blocks, tables, and diagrams across pages.
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="pdf-settings-footer">
-                            <button
-                                type="button"
-                                className="btn btn-sm btn-outline-secondary"
-                                onClick={() => {
-                                    setMargins({ top: 15, right: 15, bottom: 15, left: 15 });
-                                    setSmartPageBreaks(true);
-                                }}
-                            >
-                                Reset Defaults
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-sm btn-primary"
-                                onClick={() => handleSaveSettings(margins, smartPageBreaks)}
-                            >
-                                Apply & Save
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <PdfSettingsModal
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                margins={margins}
+                smartPageBreaks={smartPageBreaks}
+                onSave={handleSaveSettings}
+                documentTitle={resolveExportBasename(exportBaseName, markdown)}
+            />
         </div>
     );
 };
