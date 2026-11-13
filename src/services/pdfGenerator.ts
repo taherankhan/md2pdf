@@ -295,9 +295,9 @@ function layoutContentIntoA4Pages(
       // B. Tables (<table>): split cleanly between <tr> rows with cloned <thead>
       if (item.tagName.toLowerCase() === 'table') {
         const tbody = item.querySelector('tbody') || item;
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        const thead = item.querySelector('thead');
-        const theadHeight = thead?.offsetHeight || 38;
+        const rows = Array.from(tbody.querySelectorAll<HTMLElement>('tr'));
+        const thead = item.querySelector<HTMLElement>('thead');
+        const theadHeight = thead ? thead.offsetHeight : 38;
 
         if (rows.length > 2 && remainingPx >= 70) {
           const rowHeight = rows[0]?.offsetHeight || 36;
@@ -306,7 +306,7 @@ function layoutContentIntoA4Pages(
 
           if (bestRows >= 1 && rows.length - bestRows >= 1) {
             const table1 = item.cloneNode(true) as HTMLElement;
-            const tbody1 = table1.querySelector('tbody') || table1;
+            const tbody1 = (table1.querySelector('tbody') || table1) as HTMLElement;
             tbody1.innerHTML = '';
             for (let r = 0; r < bestRows; r++) {
               tbody1.appendChild(rows[r].cloneNode(true));
@@ -314,7 +314,7 @@ function layoutContentIntoA4Pages(
             cur.contentEl.appendChild(table1);
 
             const table2 = item.cloneNode(true) as HTMLElement;
-            const tbody2 = table2.querySelector('tbody') || table2;
+            const tbody2 = (table2.querySelector('tbody') || table2) as HTMLElement;
             tbody2.innerHTML = '';
             for (let r = bestRows; r < rows.length; r++) {
               tbody2.appendChild(rows[r].cloneNode(true));
@@ -329,7 +329,7 @@ function layoutContentIntoA4Pages(
 
       // C. Lists (<ul>, <ol>): split cleanly between <li> items
       if (item.tagName.toLowerCase() === 'ul' || item.tagName.toLowerCase() === 'ol') {
-        const lis = Array.from(item.querySelectorAll(':scope > li'));
+        const lis = Array.from(item.querySelectorAll<HTMLElement>('li'));
         if (lis.length > 2 && remainingPx >= 50) {
           const liHeight = lis[0]?.offsetHeight || 26;
           const bestLis = Math.floor((remainingPx - 10) / liHeight);
