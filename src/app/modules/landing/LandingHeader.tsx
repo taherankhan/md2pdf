@@ -172,8 +172,8 @@ const LandingHeader: FC = () => {
           >
             <LandingLogoMark className="lp-logo-mark" />
             <div className="lp-logo-copy">
-              <span className="lp-logo-text">PDF Generator</span>
-              <span className="lp-logo-sub">Markdown → PDF</span>
+              <span className="lp-logo-text">MD2PDFX</span>
+              <span className="lp-logo-sub">Markdown → PDF Generator</span>
             </div>
           </a>
 
