@@ -27,40 +27,49 @@ const LandingHeader: FC = () => {
     }
   }, []);
 
-  /* ── Scroll-triggered glass header (rAF-throttled to avoid forced reflow) ── */
+  /* ── Scroll handling: Glass header & Active-section detection ── */
   useEffect(() => {
     let ticking = false;
+    const sectionIds = ['lp-hero', ...NAV_LINKS.map((l) => l.sectionId)];
+
     const update = () => {
       setScrolled(window.scrollY > 16);
+
+      const headerOffset = 140;
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 60;
+
+      if (atBottom) {
+        setActiveSection('lp-contact');
+      } else {
+        for (const id of sectionIds) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= headerOffset && rect.bottom > headerOffset) {
+            setActiveSection(id);
+            break;
+          }
+        }
+      }
+
       ticking = false;
     };
+
     const onScroll = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(update);
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    update();
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
-  /* ── Active-section detection ── */
-  useEffect(() => {
-    const sectionIds = ['lp-hero', ...NAV_LINKS.map((l) => l.sectionId)];
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]?.target.id) setActiveSection(visible[0].target.id);
-      },
-      { rootMargin: '-35% 0px -45% 0px', threshold: [0, 0.15, 0.4] }
-    );
-    sectionIds.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    update();
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
   }, []);
 
   /* ── Lock body scroll when drawer is open ── */
@@ -85,6 +94,7 @@ const LandingHeader: FC = () => {
   const goToSection = (sectionId: string) => {
     AnalyticsService.events.landingNav(sectionId);
     setMobileMenuOpen(false);
+    setActiveSection(sectionId);
     requestAnimationFrame(() => requestAnimationFrame(() => scrollToSection(sectionId)));
   };
 

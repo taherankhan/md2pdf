@@ -6,7 +6,6 @@ import ExportButton from "./components/ExportButton";
 import ThemeSelector from "./components/ThemeSelector";
 import ShareLinkButton from "./components/ShareLinkButton";
 import EditorViewToggle from "./components/EditorViewToggle";
-import ContentBlocksModal from "./components/ContentBlocksModal";
 import type { MarkdownEditorHandle } from "./lib/editorHandle";
 import "./EditorPage.css";
 import { AnalyticsService } from "../../../services/AnalyticsService";
@@ -17,7 +16,6 @@ import {
     type SharePayload,
 } from "../../../services/shareLinkService";
 import { toast } from "react-toastify";
-import { getSupabase } from "../../../services/supabaseClient";
 import type { EditorViewMode } from "./lib/editorHandle";
 import { loadEditorDraft, loadStoredTitle, saveEditorDraft } from "./lib/editorDraft";
 
@@ -78,7 +76,6 @@ const EditorPage: FC = () => {
     const previewRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorRef = useRef<MarkdownEditorHandle>(null);
-    const [snippetsOpen, setSnippetsOpen] = useState(false);
     const draftHydratedRef = useRef(false);
 
     const shareId = searchParams.get("share");
@@ -86,17 +83,21 @@ const EditorPage: FC = () => {
     const markdownRef = useRef(markdownContent);
     const themeRef = useRef(selectedTheme);
     const titleRef = useRef(documentTitle);
+    const currentVersionRef = useRef<number>(1);
     const lastSyncedPayload = useRef<SharePayload>({
         content: defaultMarkdown,
         theme: "professional",
         title: "",
     });
 
-    const applySharePayload = (payload: SharePayload) => {
+    const applySharePayload = (payload: SharePayload, version?: number) => {
         setMarkdownContent(payload.content);
         if (payload.theme) setSelectedTheme(payload.theme);
         const title = normalizeShareTitle(payload.title);
         setDocumentTitle(title);
+        if (typeof version === 'number') {
+            currentVersionRef.current = version;
+        }
         lastSyncedPayload.current = {
             content: payload.content,
             theme: payload.theme || "professional",
@@ -174,97 +175,33 @@ const EditorPage: FC = () => {
     useEffect(() => {
         if (!shareId) return;
 
-        let cancelled = false;
-        let subscription: { remove: () => void } | null = null;
-
-        void getSupabase().then((supabase) => {
-            if (cancelled) return;
-
-            const channel = supabase
-                .channel(`live-document-${shareId}`)
-                .on(
-                    'postgres_changes',
-                    {
-                        event: 'UPDATE',
-                        schema: 'public',
-                        table: 'shares',
-                        filter: `id=eq.${shareId}`,
-                    },
-                    (payload) => {
-                        if (!payload.new) return;
-
-                        const newContent = payload.new.content as string;
-                        const newTheme = (payload.new.theme as string) || 'professional';
-                        const newTitle = normalizeShareTitle(
-                            payload.new.title as string | undefined
-                        );
-
-                        if (Date.now() < suppressRemoteUntilRef.current) {
-                            lastSyncedPayload.current = {
-                                content: newContent,
-                                theme: newTheme,
-                                title: newTitle,
-                            };
-                            return;
-                        }
-
-                        const matchesSynced =
-                            newContent === lastSyncedPayload.current.content &&
-                            newTheme === lastSyncedPayload.current.theme &&
-                            newTitle === normalizeShareTitle(lastSyncedPayload.current.title);
-                        const matchesLocal =
-                            newContent === markdownRef.current &&
-                            newTheme === themeRef.current &&
-                            newTitle === normalizeShareTitle(titleRef.current);
-
-                        if (matchesSynced || matchesLocal) return;
-
-                        setMarkdownContent(newContent);
-                        setSelectedTheme(newTheme);
-                        setDocumentTitle(newTitle);
-                        lastSyncedPayload.current = {
-                            content: newContent,
-                            theme: newTheme,
-                            title: newTitle,
-                        };
-                        notifyRemoteUpdate('Document updated live by another user!');
-                    }
-                )
-                .subscribe();
-
-            subscription = {
-                remove: () => {
-                    void supabase.removeChannel(channel);
-                },
-            };
-
-            if (cancelled) {
-                subscription.remove();
-                subscription = null;
-            }
-        });
-
-        return () => {
-            cancelled = true;
-            subscription?.remove();
-        };
-    }, [shareId]);
-
-    useEffect(() => {
-        if (!shareId) return;
-
         const interval = setInterval(async () => {
             try {
-                const payload = await fetchSharePayloadFromDb(shareId);
-                if (!payload) return;
+                const result = await fetchSharePayloadFromDb(shareId, currentVersionRef.current);
+                // 304 Not Modified or network error: server confirmed no changes
+                if (!result || result.notModified || !result.payload) return;
 
+                const { payload, version } = result;
                 const remoteTitle = normalizeShareTitle(payload.title);
                 const isCloudUpdated =
                     payload.content !== lastSyncedPayload.current.content ||
                     payload.theme !== lastSyncedPayload.current.theme ||
                     remoteTitle !== normalizeShareTitle(lastSyncedPayload.current.title);
 
-                if (!isCloudUpdated) return;
+                if (!isCloudUpdated) {
+                    if (typeof version === 'number') currentVersionRef.current = version;
+                    return;
+                }
+
+                if (Date.now() < suppressRemoteUntilRef.current) {
+                    lastSyncedPayload.current = {
+                        content: payload.content,
+                        theme: payload.theme || "professional",
+                        title: remoteTitle,
+                    };
+                    if (typeof version === 'number') currentVersionRef.current = version;
+                    return;
+                }
 
                 const hasLocalEdits =
                     markdownRef.current !== lastSyncedPayload.current.content ||
@@ -274,11 +211,12 @@ const EditorPage: FC = () => {
 
                 if (hasLocalEdits) return;
 
-                applySharePayload(payload);
+                applySharePayload(payload, version);
+                notifyRemoteUpdate("Document updated from cloud!");
             } catch (err) {
                 console.error("Error polling for database updates:", err);
             }
-        }, 4000);
+        }, 3500);
 
         return () => clearInterval(interval);
     }, [shareId]);
@@ -311,11 +249,11 @@ const EditorPage: FC = () => {
         const loadSharedDoc = async () => {
             toast.loading("Loading document from cloud database...", { toastId });
             try {
-                const payload = await fetchSharePayloadFromDb(shareId);
+                const result = await fetchSharePayloadFromDb(shareId);
                 if (cancelled) return;
 
-                if (payload) {
-                    applySharePayload(payload);
+                if (result && !result.notModified && result.payload) {
+                    applySharePayload(result.payload, result.version);
                     loadedShareIdsRef.current.add(shareId);
                     toast.update(toastId, {
                         render: "Document loaded successfully!",
@@ -333,7 +271,7 @@ const EditorPage: FC = () => {
                 }
             } catch (error) {
                 if (cancelled) return;
-                console.error("❌ Failed to fetch shared document from Supabase.", error);
+                console.error("❌ Failed to fetch shared document from database.", error);
                 toast.update(toastId, {
                     render: "Failed to load document from cloud.",
                     type: "error",
@@ -454,20 +392,14 @@ const EditorPage: FC = () => {
                         onChange={handleFileUpload}
                     />
                     <div className="toolbar-divider" aria-hidden />
-                    <button
-                        type="button"
-                        className="btn-snippets"
-                        onClick={() => setSnippetsOpen(true)}
-                        title="Content blocks and snippets"
-                    >
-                        <i className="bi bi-grid-3x3-gap" aria-hidden />
-                        <span className="btn-snippets-label">Snippets</span>
-                    </button>
                     <ShareLinkButton
                         payload={buildSharePayload()}
                         shareId={shareId || undefined}
                         onShareIdChange={handleShareIdChange}
-                        onSaveSuccess={(saved) => {
+                        onSaveSuccess={(saved, version) => {
+                            if (typeof version === 'number') {
+                                currentVersionRef.current = version;
+                            }
                             lastSyncedPayload.current = {
                                 content: saved.content,
                                 theme: saved.theme || "professional",
@@ -488,15 +420,6 @@ const EditorPage: FC = () => {
                     />
                 </div>
             </div>
-
-            <ContentBlocksModal
-                open={snippetsOpen}
-                onClose={() => setSnippetsOpen(false)}
-                onInsert={(text) => {
-                    editorRef.current?.insertText(text);
-                    editorRef.current?.focus();
-                }}
-            />
 
             <div className={`editor-content ${fullScreenPane ? 'top-0' : ''}`}>
                 <div

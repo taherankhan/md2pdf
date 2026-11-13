@@ -1,21 +1,29 @@
-import { getSupabase } from './supabaseClient';
-
 export type ContactMessage = {
   email: string;
   message: string;
 };
 
+function getApiBaseUrl(): string {
+  const base = import.meta.env.VITE_API_BASE_URL;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/+$/, '');
+  }
+  return '';
+}
+
 export async function submitContactMessage(payload: ContactMessage): Promise<void> {
-  const supabase = await getSupabase();
-  const { error } = await supabase.from('contact_messages').insert([
-    {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       email: payload.email.trim(),
       message: payload.message.trim(),
-    },
-  ]);
+    }),
+  });
 
-  if (error) {
-    console.error('Error submitting contact message:', error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to submit contact message');
   }
 }

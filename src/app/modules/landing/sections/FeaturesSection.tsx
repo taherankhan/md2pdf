@@ -17,7 +17,7 @@ const FEATURES: Feature[] = [
     num: '01',
     tag: 'Core',
     title: 'Pro Editor & Preview',
-    desc: 'CodeMirror workspace with Edit, Split, and Preview, formatting toolbar, emoji shortcuts, and debounced live preview.',
+    desc: 'CodeMirror workspace with Edit, Split, and Preview, formatting toolbar, and debounced live preview.',
     accent: 'violet',
     visual: 'editor',
   },
@@ -40,8 +40,8 @@ const FEATURES: Feature[] = [
   {
     num: '04',
     tag: 'Workflow',
-    title: 'Snippets & Cloud Share',
-    desc: 'Built-in content blocks for docs, code, and diagrams. Share via link with saved title and live updates when you choose to sync.',
+    title: 'Cloud Share & Sync',
+    desc: 'Share documents via short links with saved titles and automatic real-time sync across collaborators.',
     accent: 'green',
     visual: 'privacy',
   },
@@ -139,8 +139,8 @@ const FeaturesSection: FC = () => (
               <span className="lp-feat-title-accent">Nothing Extra.</span>
             </h2>
             <p className="lp-section-desc">
-              Every item below is in the app today — CodeMirror editing, content blocks, multi-format
-              export, Mermaid, and optional cloud sharing. No account required to start.
+              Every item below is in the app today — CodeMirror editing, live preview, multi-format
+              export, Mermaid, and cloud sharing. No account required to start.
             </p>
           </div>
 

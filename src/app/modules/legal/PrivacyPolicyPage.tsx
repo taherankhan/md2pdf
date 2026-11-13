@@ -33,7 +33,7 @@ const PrivacyPolicyPage: FC = () => (
       </li>
       <li>
         <strong>Contact form:</strong> If enabled, messages you submit are stored in our database
-        provider (Supabase) to respond to you.
+        provider (MongoDB Atlas) to respond to you.
       </li>
     </ul>
 
@@ -82,7 +82,7 @@ const PrivacyPolicyPage: FC = () => (
     <p>We use trusted processors, including:</p>
     <ul>
       <li>Hosting (e.g. Vercel) — serves the web application</li>
-      <li>Supabase — optional contact messages and cloud share storage</li>
+      <li>MongoDB Atlas — optional contact messages and cloud share storage</li>
       <li>Google — optional Analytics</li>
     </ul>
     <p>They process data only to provide services to us under their terms and security measures.</p>

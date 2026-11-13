@@ -27,7 +27,6 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(({
         [ref]
     );
     const [linkOpen, setLinkOpen] = useState(false);
-    const [emojiOpen, setEmojiOpen] = useState(false);
 
     const wordCount = value.split(/\s+/).filter(Boolean).length;
     const lineCount = value.split('\n').length;
@@ -37,8 +36,6 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(({
             <EditorFormatToolbar
                 editorRef={handleRef}
                 onRequestLink={() => setLinkOpen(true)}
-                emojiOpen={emojiOpen}
-                onEmojiOpenChange={setEmojiOpen}
             />
             <div className="editor-pane-header">
                 <div className="editor-pane-label">
@@ -70,7 +67,6 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(({
                     ref={setEditorHandle}
                     value={value}
                     onChange={onChange}
-                    onOpenEmojiPicker={() => setEmojiOpen(true)}
                 />
             </div>
             <LinkInsertModal

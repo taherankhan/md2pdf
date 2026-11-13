@@ -66,15 +66,15 @@ export const THEMES: PdfTheme[] = [
 ];
 
 export const STEPS: WorkflowStep[] = [
-  { num: '1', title: 'Write or insert', desc: 'Type markdown, use content-block snippets, or upload a .md file.' },
-  { num: '2', title: 'Edit & preview', desc: 'Switch Edit, Split, or Preview — format bar, emoji, and Mermaid in the pane.' },
+  { num: '1', title: 'Write or upload', desc: 'Type markdown directly or upload a .md file to start.' },
+  { num: '2', title: 'Edit & preview', desc: 'Switch Edit, Split, or Preview — format bar and Mermaid in the pane.' },
   { num: '3', title: 'Theme & share', desc: 'Pick a PDF theme; optional cloud link with live sync and document title.' },
   { num: '4', title: 'Export', desc: 'Download PDF (default), Markdown, or HTML — rendered in your browser.' },
 ];
 
 export const STATS = [
   { value: '6', label: 'PDF Themes' },
-  { value: '20+', label: 'Snippets' },
+  { value: '100%', label: 'Browser-Based' },
   { value: '3', label: 'Export Formats' },
   { value: '∞', label: 'Free to Use' },
 ];
@@ -82,7 +82,7 @@ export const STATS = [
 export const HERO_FEATURE_CHIPS = [
   'Split editor',
   'Mermaid',
-  'Snippets',
+  'Cloud Sync',
   'PDF · MD · HTML',
 ] as const;
 

@@ -1,6 +1,8 @@
 import ReactGA from 'react-ga4';
 
-const ANALYTICS_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
+const ANALYTICS_ID =
+  (import.meta.env.GA_MEASUREMENT_ID as string | undefined) ||
+  (import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefined);
 const IS_DEV = import.meta.env.DEV;
 
 const log = (...args: unknown[]) => {
@@ -14,7 +16,7 @@ export const AnalyticsService = {
     if (!ANALYTICS_ID) {
       if (IS_DEV) {
         console.warn(
-          'Google Analytics disabled: set VITE_GA_MEASUREMENT_ID in .env (format G-XXXXXXXXXX)'
+          'Google Analytics disabled: set GA_MEASUREMENT_ID in .env (format G-XXXXXXXXXX)'
         );
       }
       return;
@@ -81,9 +83,6 @@ export const AnalyticsService = {
     },
     editorFileUpload: (fileType: string) => {
       AnalyticsService.trackEvent('Editor', 'Upload', fileType);
-    },
-    editorSnippetInsert: (category: string) => {
-      AnalyticsService.trackEvent('Editor', 'Snippet Insert', category);
     },
 
     /** Landing page */

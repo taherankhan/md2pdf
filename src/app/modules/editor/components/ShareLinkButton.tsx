@@ -12,7 +12,7 @@ interface ShareLinkButtonProps {
   payload: SharePayload;
   shareId?: string;
   onShareIdChange?: (id: string, options?: { skipLoad?: boolean }) => void;
-  onSaveSuccess?: (payload: SharePayload) => void;
+  onSaveSuccess?: (payload: SharePayload, version?: number) => void;
 }
 
 const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, onShareIdChange, onSaveSuccess }) => {
@@ -34,20 +34,13 @@ const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, onShareId
         onShareIdChange(id, { skipLoad: true });
       }
       if (onSaveSuccess) {
-        onSaveSuccess(payload);
+        onSaveSuccess(payload, 1);
       }
 
       toast.success("Document shared! Link copied to clipboard.");
       setTimeout(() => setCopied(false), 2000);
     } catch (dbError) {
-      console.error(
-        "❌ Supabase document upload failed! Troubleshooting Checklist:\n" +
-        "1. DNS PROPAGATION DELAY: If your Supabase project was created recently, your local ISP (e.g. Jio) might not resolve the domain yet, resulting in timeout (ERR_CONNECTION_TIMED_OUT).\n" +
-        "2. MISSING 'shares' TABLE: Ensure you ran the SQL setup script to create the 'shares' table in your Supabase SQL Editor.\n" +
-        "3. PAUSED DATABASE: Go to your Supabase project settings and ensure the database container is active (or hit Restart Project).\n" +
-        "Error Details:",
-        dbError
-      );
+      console.error("Cloud document save failed:", dbError);
       
       // Fallback to offline URL compression
       const url = buildShareUrl(payload);
@@ -68,11 +61,11 @@ const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, onShareId
     if (!shareId) return;
     try {
       setIsSaving(true);
-      await updateSharePayloadInDb(shareId, payload);
+      const result = await updateSharePayloadInDb(shareId, payload);
       if (onSaveSuccess) {
-        onSaveSuccess(payload);
+        onSaveSuccess(payload, result?.version);
       }
-      toast.success("Changes saved! Others viewing this link will see updates instantly.");
+      toast.success("Changes saved! Others viewing this link will see updates shortly.");
     } catch (error) {
       toast.error("Failed to save changes to database.");
     } finally {

@@ -66,9 +66,8 @@ const HeroSection: FC<Props> = ({ selectedTheme, onThemeChange }) => {
 
           {/* ── Subtitle (no entrance animation — Lighthouse LCP element) */}
           <p className="lp-hero-sub">
-            CodeMirror editor with Edit, Split, and Preview, content-block snippets, Mermaid diagrams,
-            and export to PDF, Markdown, or HTML. Free to start — sharing is optional and only when you
-            create a link.
+            CodeMirror editor with Edit, Split, and Preview, Mermaid diagrams, and export to PDF,
+            Markdown, or HTML. Free to start — sharing is optional and only when you create a link.
           </p>
 
           <ul className="lp-hero-chips" aria-label="Editor highlights">
@@ -120,7 +119,7 @@ const HeroSection: FC<Props> = ({ selectedTheme, onThemeChange }) => {
                 </div>
                 <span className="lp-mockup-title">Untitled document</span>
                 <div className="lp-mockup-topbar-actions">
-                  <span className="lp-mockup-pill">Snippets</span>
+                  <span className="lp-mockup-pill">Share</span>
                   <span className="lp-mockup-pill lp-mockup-pill--accent">Export</span>
                   <div className="lp-mockup-theme-picker">
                     <span className="lp-mockup-theme-label">Theme</span>

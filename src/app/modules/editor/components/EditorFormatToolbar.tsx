@@ -1,24 +1,18 @@
 import { FC, RefObject, useRef, useState } from 'react';
 import type { MarkdownEditorHandle } from '../lib/editorHandle';
 import { AnalyticsService } from '../../../../services/AnalyticsService';
-import EmojiPickerPanel from './EmojiPickerPanel';
 
 interface EditorFormatToolbarProps {
   editorRef: RefObject<MarkdownEditorHandle | null>;
   onRequestLink: () => void;
-  emojiOpen: boolean;
-  onEmojiOpenChange: (open: boolean) => void;
 }
 
 const EditorFormatToolbar: FC<EditorFormatToolbarProps> = ({
   editorRef,
   onRequestLink,
-  emojiOpen,
-  onEmojiOpenChange,
 }) => {
   const [headingOpen, setHeadingOpen] = useState(false);
   const headingRef = useRef<HTMLDivElement>(null);
-  const emojiAnchorRef = useRef<HTMLButtonElement>(null);
 
   const run = (action: string, fn: () => void) => {
     fn();
@@ -27,11 +21,6 @@ const EditorFormatToolbar: FC<EditorFormatToolbarProps> = ({
   };
 
   const editor = () => editorRef.current;
-
-  const toggleEmoji = () => {
-    onEmojiOpenChange(!emojiOpen);
-    if (!emojiOpen) AnalyticsService.events.editorFormat('emoji-picker');
-  };
 
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="Formatting">
@@ -191,32 +180,6 @@ const EditorFormatToolbar: FC<EditorFormatToolbarProps> = ({
       >
         <i className="bi bi-arrow-clockwise" aria-hidden />
       </button>
-
-      <span className="editor-format-divider" aria-hidden />
-
-      <div className="editor-format-group editor-format-emoji-anchor">
-        <button
-          ref={emojiAnchorRef}
-          type="button"
-          className={`editor-format-btn editor-format-emoji-trigger ${emojiOpen ? 'active' : ''}`}
-          title="Emoji (Ctrl+E)"
-          aria-expanded={emojiOpen}
-          aria-haspopup="dialog"
-          onClick={toggleEmoji}
-        >
-          <span className="editor-format-emoji-face" aria-hidden>
-            😀
-          </span>
-        </button>
-        <EmojiPickerPanel
-          open={emojiOpen}
-          anchorRef={emojiAnchorRef}
-          onClose={() => onEmojiOpenChange(false)}
-          onPick={(entry) => {
-            run('emoji', () => editor()?.insertText(entry.emoji));
-          }}
-        />
-      </div>
     </div>
   );
 };

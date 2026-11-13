@@ -1,16 +1,21 @@
 /**
- * Share link encoding/decoding — no backend.
- * Payload lives in URL hash so it's never sent to the server.
+ * Share link encoding/decoding and MongoDB API integration.
+ * Supports hash-based offline sharing and backend MongoDB Atlas cloud shares.
  */
 
 import LZString from 'lz-string';
-import { getSupabase } from './supabaseClient';
 
 export interface SharePayload {
   content: string;
   theme?: string;
   /** Document title from the editor header */
   title?: string;
+}
+
+export interface FetchShareResult {
+  notModified: boolean;
+  payload?: SharePayload;
+  version?: number;
 }
 
 const HASH_PREFIX = 'd=';
@@ -72,52 +77,86 @@ export function buildShareUrl(payload: SharePayload): string {
 /** Rough safe length for most browsers; beyond this we warn. */
 export const SHARE_URL_LENGTH_WARN = 1800;
 
-function rowFromPayload(payload: SharePayload) {
-  return {
-    content: payload.content,
-    theme: payload.theme ?? 'professional',
-    title: normalizeShareTitle(payload.title),
-  };
+function getApiBaseUrl(): string {
+  const base = import.meta.env.VITE_API_BASE_URL;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/+$/, '');
+  }
+  return '';
 }
 
 /**
- * Save payload (content, theme, title) to Supabase. Returns the short UUID of the row.
+ * Save payload (content, theme, title) to MongoDB backend. Returns the UUID of the share.
  */
 export async function saveSharePayloadToDb(payload: SharePayload): Promise<string> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase
-    .from('shares')
-    .insert([rowFromPayload(payload)])
-    .select('id')
-    .single();
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: payload.content,
+      theme: payload.theme ?? 'professional',
+      title: normalizeShareTitle(payload.title),
+    }),
+  });
 
-  if (error) {
-    console.error('Error saving document to database:', error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Failed to save document: ${response.statusText}`);
   }
+
+  const data = await response.json();
   return data.id;
 }
 
 /**
- * Fetch payload from Supabase using its UUID.
+ * Fetch payload from MongoDB backend using its ID. Supports conditional version check (304 Not Modified).
  */
-export async function fetchSharePayloadFromDb(id: string): Promise<SharePayload | null> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase
-    .from('shares')
-    .select('content, theme, title')
-    .eq('id', id)
-    .single();
+export async function fetchSharePayloadFromDb(
+  id: string,
+  version?: number
+): Promise<FetchShareResult | null> {
+  const apiBase = getApiBaseUrl();
+  const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3026';
+  const url = new URL(`${apiBase}/api/shares/${encodeURIComponent(id)}`, baseOrigin);
 
-  if (error) {
-    console.error('Error loading document from database:', error);
+  if (typeof version === 'number' && !isNaN(version)) {
+    url.searchParams.set('version', String(version));
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (typeof version === 'number' && !isNaN(version)) {
+    headers['If-None-Match'] = `W/"${version}"`;
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers,
+  });
+
+  if (response.status === 304) {
+    return { notModified: true };
+  }
+
+  if (response.status === 404) {
     return null;
   }
 
+  if (!response.ok) {
+    throw new Error(`Failed to load document (${response.status} ${response.statusText})`);
+  }
+
+  const data = await response.json();
   return {
-    content: data.content,
-    theme: data.theme,
-    title: typeof data.title === 'string' ? data.title : '',
+    notModified: false,
+    payload: {
+      content: data.content,
+      theme: data.theme,
+      title: typeof data.title === 'string' ? data.title : '',
+    },
+    version: data.version,
   };
 }
 
@@ -133,23 +172,27 @@ export function buildDbShareUrl(id: string): string {
 }
 
 /**
- * Update an existing payload (content, theme, title) in Supabase.
+ * Update an existing payload (content, theme, title) in MongoDB backend.
  */
-export async function updateSharePayloadInDb(id: string, payload: SharePayload): Promise<void> {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase
-    .from('shares')
-    .update(rowFromPayload(payload))
-    .eq('id', id)
-    .select('id')
-    .single();
+export async function updateSharePayloadInDb(
+  id: string,
+  payload: SharePayload
+): Promise<{ version: number }> {
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/shares/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: payload.content,
+      theme: payload.theme ?? 'professional',
+      title: normalizeShareTitle(payload.title),
+    }),
+  });
 
-  if (error) {
-    console.error('Error updating document in database:', error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Failed to update document: ${response.statusText}`);
   }
 
-  if (!data?.id) {
-    throw new Error('Update did not affect any rows. Check Supabase RLS UPDATE policy on public.shares.');
-  }
+  return await response.json();
 }

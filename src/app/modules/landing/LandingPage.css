@@ -1213,13 +1213,6 @@ html {
   height: 100%;
 }
 
-.lp-split-emoji {
-  font-size: 80px;
-  z-index: 1;
-  filter: drop-shadow(0 0 30px rgba(108, 99, 255, 0.3));
-  animation: lp-float 6s ease-in-out infinite;
-}
-
 .lp-split-glow {
   position: absolute;
   width: 200px;
@@ -4683,7 +4676,6 @@ html {
   .lp-feat-export-icon,
   .lp-feat-orbit,
   .lp-export-icon-fly,
-  .lp-split-emoji,
   .lp-hero-title-line--accent {
     animation: none !important;
   }

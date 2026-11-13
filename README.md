@@ -139,7 +139,7 @@ PDF_Generator/
 To activate Google Analytics tracking, configure a `.env` file in the root directory:
 
 ```env
-VITE_GA_MEASUREMENT_ID=your-google-analytics-id
+GA_MEASUREMENT_ID=your-google-analytics-id
 ```
 
 If this variable is not provided, the analytics service automatically runs in development logging mode without throwing errors.

@@ -18,10 +18,6 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import type { MarkdownEditorHandle } from '../lib/editorHandle';
 import * as actions from '../lib/markdownEditorActions';
-import {
-  emojiAutocompleteExtension,
-  emojiAutocompleteTheme,
-} from '../lib/emojiAutocomplete';
 
 const darkEditorTheme = EditorView.theme(
   {
@@ -74,24 +70,18 @@ interface CodeMirrorEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   readOnly?: boolean;
-  onOpenEmojiPicker?: () => void;
 }
 
 const CodeMirrorEditor = forwardRef<MarkdownEditorHandle, CodeMirrorEditorProps>(
-  ({ value, onChange, readOnly, onOpenEmojiPicker }, ref) => {
+  ({ value, onChange, readOnly }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const onChangeRef = useRef(onChange);
-    const onEmojiRef = useRef(onOpenEmojiPicker);
     const syncingRef = useRef(false);
 
     useEffect(() => {
       onChangeRef.current = onChange;
     }, [onChange]);
-
-    useEffect(() => {
-      onEmojiRef.current = onOpenEmojiPicker;
-    }, [onOpenEmojiPicker]);
 
     useImperativeHandle(ref, () => {
       const getView = () => viewRef.current;
@@ -149,19 +139,10 @@ const CodeMirrorEditor = forwardRef<MarkdownEditorHandle, CodeMirrorEditorProps>
           history(),
           markdown(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          EditorView.theme(emojiAutocompleteTheme, { dark: true }),
           darkEditorTheme,
-          emojiAutocompleteExtension(),
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
-            {
-              key: 'Mod-e',
-              run: () => {
-                onEmojiRef.current?.();
-                return true;
-              },
-            },
           ]),
           updateListener,
           EditorView.editable.of(!readOnly),
