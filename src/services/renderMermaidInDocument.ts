@@ -1,3 +1,5 @@
+import { cleanMermaidCode } from './markdownParser';
+
 const MERMAID_CDN =
   'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
@@ -5,7 +7,8 @@ const MERMAID_INIT = `{
   startOnLoad: false,
   theme: 'neutral',
   securityLevel: 'loose',
-  fontFamily: 'Inter, system-ui, sans-serif'
+  fontFamily: 'Inter, system-ui, sans-serif',
+  suppressErrorRendering: true
 }`;
 
 export const MERMAID_DIAGRAM_STYLES = `
@@ -30,6 +33,19 @@ function unrenderedMermaidNodes(doc: Document): HTMLElement[] {
 
 let bundledInitialized = false;
 
+function extractNodeCode(node: HTMLElement): string {
+  const data = node.getAttribute('data-mermaid');
+  if (data) {
+    try {
+      return decodeURIComponent(data);
+    } catch {
+      // fallback to textContent
+    }
+  }
+  const rawText = node.textContent || node.innerText || '';
+  return cleanMermaidCode(rawText);
+}
+
 /**
  * Render diagrams in any document using the bundled mermaid package (PDF / off-screen export).
  */
@@ -51,13 +67,8 @@ export async function renderMermaidInDocument(doc: Document): Promise<void> {
 
   for (const node of nodes) {
     try {
-      let rawText = node.textContent || node.innerText || '';
-      rawText = rawText
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"');
-      node.textContent = rawText.trim();
+      const code = extractNodeCode(node);
+      node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
     } catch (error) {
       console.warn('Mermaid diagram render failed:', error);
@@ -82,19 +93,33 @@ export function mermaidPreviewScriptTag(): string {
 import mermaid from '${MERMAID_CDN}';
 try {
   mermaid.initialize(${MERMAID_INIT});
+
+  const decodeData = (el) => {
+    const raw = el.getAttribute('data-mermaid');
+    if (raw) {
+      try {
+        return decodeURIComponent(raw);
+      } catch (e) {}
+    }
+    let t = el.textContent || el.innerText || '';
+    return t
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"');
+  };
+
   const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
   for (const node of nodes) {
     try {
-      let text = node.textContent || node.innerText || '';
-      text = text
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"');
-      node.textContent = text.trim();
+      const code = decodeData(node).trim();
+      node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
     } catch (e) {
       console.warn('[preview] Mermaid node render failed', e);
+      if (!node.querySelector('svg')) {
+        node.innerHTML = '<div style="margin:1rem 0;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-family:sans-serif;font-size:12px;">⚠️ <strong>Mermaid Diagram Syntax Error:</strong> Please verify diagram syntax.</div>';
+      }
     }
   }
 } catch (err) {
@@ -111,16 +136,27 @@ export function mermaidHtmlExportScriptTag(): string {
 import mermaid from '${MERMAID_CDN}';
 try {
   mermaid.initialize(${MERMAID_INIT});
+
+  const decodeData = (el) => {
+    const raw = el.getAttribute('data-mermaid');
+    if (raw) {
+      try {
+        return decodeURIComponent(raw);
+      } catch (e) {}
+    }
+    let t = el.textContent || el.innerText || '';
+    return t
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"');
+  };
+
   const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
   for (const node of nodes) {
     try {
-      let text = node.textContent || node.innerText || '';
-      text = text
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"');
-      node.textContent = text.trim();
+      const code = decodeData(node).trim();
+      node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
     } catch (e) {}
   }
