@@ -214,8 +214,10 @@ function layoutContentIntoA4Pages(
 
   const queue: HTMLElement[] = [...elements];
   let cur = createA4Page();
+  let iterationCount = 0;
+  const MAX_ITERATIONS = Math.max(1000, elements.length * 8);
 
-  while (queue.length > 0) {
+  while (queue.length > 0 && iterationCount++ < MAX_ITERATIONS) {
     const item = queue.shift()!;
 
     // Test append
@@ -242,9 +244,11 @@ function layoutContentIntoA4Pages(
     const remainingPx = printableHeightPx - currentHeight;
 
     // 1. Orphan Heading Prevention:
-    // If the last child on cur page is a heading, move it together with this item to the new page!
+    // Only move a heading if cur page already has other content prior to the heading.
+    // If cur page has only 1 child (the heading itself), it is already at the top of a fresh page,
+    // so moving it again would cause an infinite loop!
     const lastChild = cur.contentEl.lastElementChild as HTMLElement | null;
-    if (lastChild && isHeadingElement(lastChild)) {
+    if (cur.contentEl.children.length > 1 && lastChild && isHeadingElement(lastChild)) {
       cur.contentEl.removeChild(lastChild);
       queue.unshift(item);
       queue.unshift(lastChild);
@@ -254,27 +258,22 @@ function layoutContentIntoA4Pages(
 
     // 2. Smart Splitting (Code blocks, Tables, Lists):
     if (smartPageBreaks) {
-      // A. Code Blocks (<pre>): split cleanly between lines (\n)
+      // A. Code Blocks (<pre>): split cleanly between lines (\n) using mathematical calculation
       if (item.tagName.toLowerCase() === 'pre') {
         const codeEl = item.querySelector('code') || item;
         const rawCode = codeEl.textContent || '';
         const lines = rawCode.split('\n');
 
         if (lines.length > 3 && remainingPx >= 65) {
-          let bestLines = 0;
-          for (let count = lines.length - 1; count >= 2; count--) {
-            const testPre = item.cloneNode(true) as HTMLElement;
-            const testCode = testPre.querySelector('code') || testPre;
-            testCode.textContent = lines.slice(0, count).join('\n');
-            cur.contentEl.appendChild(testPre);
-            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
-            cur.contentEl.removeChild(testPre);
+          const computed = sandboxDoc.defaultView?.getComputedStyle(item) || window.getComputedStyle(item);
+          const rawLineHeight = parseFloat(computed.lineHeight);
+          const fontSize = parseFloat(computed.fontSize) || 13;
+          const lineHeight = !isNaN(rawLineHeight) && rawLineHeight > 0 ? rawLineHeight : fontSize * 1.5;
+          const padTop = parseFloat(computed.paddingTop) || 14;
+          const padBottom = parseFloat(computed.paddingBottom) || 14;
 
-            if (fits) {
-              bestLines = count;
-              break;
-            }
-          }
+          const availForLines = remainingPx - padTop - padBottom;
+          const bestLines = Math.floor(availForLines / lineHeight);
 
           if (bestLines >= 2 && lines.length - bestLines >= 1) {
             const part1 = item.cloneNode(true) as HTMLElement;
@@ -297,25 +296,13 @@ function layoutContentIntoA4Pages(
       if (item.tagName.toLowerCase() === 'table') {
         const tbody = item.querySelector('tbody') || item;
         const rows = Array.from(tbody.querySelectorAll('tr'));
+        const thead = item.querySelector('thead');
+        const theadHeight = thead?.offsetHeight || 38;
 
-        if (rows.length > 2 && remainingPx >= 65) {
-          let bestRows = 0;
-          for (let count = rows.length - 1; count >= 1; count--) {
-            const testTable = item.cloneNode(true) as HTMLElement;
-            const testTbody = testTable.querySelector('tbody') || testTable;
-            testTbody.innerHTML = '';
-            for (let r = 0; r < count; r++) {
-              testTbody.appendChild(rows[r].cloneNode(true));
-            }
-            cur.contentEl.appendChild(testTable);
-            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
-            cur.contentEl.removeChild(testTable);
-
-            if (fits) {
-              bestRows = count;
-              break;
-            }
-          }
+        if (rows.length > 2 && remainingPx >= 70) {
+          const rowHeight = rows[0]?.offsetHeight || 36;
+          const availForRows = remainingPx - theadHeight - 16;
+          const bestRows = Math.floor(availForRows / rowHeight);
 
           if (bestRows >= 1 && rows.length - bestRows >= 1) {
             const table1 = item.cloneNode(true) as HTMLElement;
@@ -344,21 +331,8 @@ function layoutContentIntoA4Pages(
       if (item.tagName.toLowerCase() === 'ul' || item.tagName.toLowerCase() === 'ol') {
         const lis = Array.from(item.querySelectorAll(':scope > li'));
         if (lis.length > 2 && remainingPx >= 50) {
-          let bestLis = 0;
-          for (let count = lis.length - 1; count >= 1; count--) {
-            const testList = item.cloneNode(false) as HTMLElement;
-            for (let l = 0; l < count; l++) {
-              testList.appendChild(lis[l].cloneNode(true));
-            }
-            cur.contentEl.appendChild(testList);
-            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
-            cur.contentEl.removeChild(testList);
-
-            if (fits) {
-              bestLis = count;
-              break;
-            }
-          }
+          const liHeight = lis[0]?.offsetHeight || 26;
+          const bestLis = Math.floor((remainingPx - 10) / liHeight);
 
           if (bestLis >= 1 && lis.length - bestLis >= 1) {
             const list1 = item.cloneNode(false) as HTMLElement;
@@ -406,6 +380,9 @@ async function renderPagesToPdf(
   themeBgColor: string
 ): Promise<void> {
   for (let i = 0; i < pages.length; i++) {
+    // Yield to the browser main thread between pages so UI stays responsive
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
     if (i > 0) {
       pdf.addPage('a4', 'portrait');
     }
