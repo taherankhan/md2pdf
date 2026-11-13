@@ -40,7 +40,7 @@ const ExportButton: FC<ExportButtonProps> = ({
     const [isExporting, setIsExporting] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pdf');
+    const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('print');
     const [margins, setMargins] = useState<PdfMargins>(() => {
         try {
             const saved = localStorage.getItem('md2pdf_margins');
@@ -204,7 +204,7 @@ const ExportButton: FC<ExportButtonProps> = ({
 
             {menuOpen && (
                 <div className="export-menu-dropdown" role="listbox" aria-label="Export format">
-                    {(['pdf', 'print', 'markdown', 'html'] as const).map((format) => {
+                    {(['print', 'pdf', 'markdown', 'html'] as const).map((format) => {
                         const meta = EXPORT_FORMAT_META[format];
                         const active = selectedFormat === format;
                         return (
@@ -218,6 +218,20 @@ const ExportButton: FC<ExportButtonProps> = ({
                             >
                                 <i className={`bi ${meta.icon}`} aria-hidden />
                                 <span>{meta.label}</span>
+                                {meta.badge && (
+                                    <span style={{
+                                        fontSize: '10px',
+                                        fontWeight: 700,
+                                        marginLeft: 'auto',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        background: format === 'print' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(129, 140, 248, 0.15)',
+                                        color: format === 'print' ? '#38bdf8' : '#818cf8',
+                                        border: `1px solid ${format === 'print' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(129, 140, 248, 0.3)'}`,
+                                    }}>
+                                        {meta.badge}
+                                    </span>
+                                )}
                                 {active && (
                                     <i className="bi bi-check2 export-menu-item-check" aria-hidden />
                                 )}

@@ -66,8 +66,8 @@ export const DEFAULT_PDF_MARGINS: PdfMargins = {
 
 /**
  * Calculates optimal page break points (Y coordinates in DOM pixels)
- * so that headings, code blocks, tables, diagrams, and blockquotes
- * are not cut in half across page boundaries.
+ * so that headings and blocks are not split awkwardly across page boundaries,
+ * while STRICTLY avoiding giant empty white spaces.
  */
 function calculateSmartPageBreaks(
   container: HTMLElement,
@@ -90,48 +90,66 @@ function calculateSmartPageBreaks(
 
   const targets = Array.from(
     container.querySelectorAll(
-      'h1, h2, h3, h4, h5, h6, pre, table, tr, blockquote, .mermaid, img, p'
+      'h1, h2, h3, h4, h5, h6, pre, table, blockquote, .mermaid, img'
     )
   ) as HTMLElement[];
 
   let currentY = 0;
+  // Maximum allowed white gap at the bottom of a page in DOM px.
+  // Strictly capped at 120px (~10% of page height) so we NEVER leave 70-80% empty wastelands.
+  const MAX_PERMITTED_BOTTOM_GAP_PX = 120;
 
   while (currentY + pageHeightPx < totalHeight) {
     const idealY = currentY + pageHeightPx;
+    const minAllowedCut = idealY - MAX_PERMITTED_BOTTOM_GAP_PX;
     let bestCutY = idealY;
 
-    for (const el of targets) {
+    for (let idx = 0; idx < targets.length; idx++) {
+      const el = targets[idx];
       const rect = el.getBoundingClientRect();
       const elTop = rect.top - containerRect.top;
       const elHeight = el.offsetHeight;
       const elBottom = elTop + elHeight;
       const tagName = el.tagName.toLowerCase();
       const isHeading = /^h[1-6]$/.test(tagName);
-      const isAtomic = ['pre', 'table', 'blockquote', 'img'].includes(tagName) || el.classList.contains('mermaid');
 
-      // 1. Prevent Orphan Headings: If a heading begins within 140px of the page bottom, push to next page
-      if (isHeading && elTop < idealY && elTop > idealY - 140 && elTop > currentY + 150) {
-        bestCutY = Math.min(bestCutY, elTop);
+      // 1. Orphan Heading Prevention:
+      // If a heading starts within the bottom gap zone (last 120px), push it cleanly to the next page.
+      if (isHeading && elTop >= minAllowedCut && elTop < idealY) {
+        bestCutY = elTop;
+        break;
       }
 
-      // 2. Prevent Splitting Code Blocks, Tables, Blockquotes, Diagrams, Images
+      // 2. Atomic Element (code block, table, diagram, blockquote, image)
+      const isAtomic =
+        ['pre', 'table', 'blockquote', 'img'].includes(tagName) ||
+        el.classList.contains('mermaid');
+
       if (isAtomic && elTop < idealY && elBottom > idealY) {
-        // Only break before if the element fits within a single page
-        if (elHeight < pageHeightPx * 0.92 && elTop > currentY + 180) {
-          bestCutY = Math.min(bestCutY, elTop);
-        }
-      }
-
-      // 3. Prevent Orphan Paragraph lines near page bottom
-      if (tagName === 'p' && elTop < idealY && elBottom > idealY) {
-        if (elTop > idealY - 50 && elTop > currentY + 150) {
-          bestCutY = Math.min(bestCutY, elTop);
+        // ONLY break before the element if it begins NEAR the bottom of the page (within the 120px window).
+        // If it starts higher up on the page, it MUST continue on this page to avoid leaving giant blank voids!
+        if (elTop >= minAllowedCut) {
+          let cutPoint = elTop;
+          // Check if there is an immediately preceding heading within 70px above it:
+          // Keep the heading and this block together!
+          if (idx > 0) {
+            const prev = targets[idx - 1];
+            if (/^h[1-6]$/.test(prev.tagName.toLowerCase())) {
+              const prevRect = prev.getBoundingClientRect();
+              const prevTop = prevRect.top - containerRect.top;
+              if (prevTop >= currentY + 120 && elTop - (prevTop + prev.offsetHeight) < 70) {
+                cutPoint = prevTop;
+              }
+            }
+          }
+          bestCutY = cutPoint;
+          break;
         }
       }
     }
 
-    // Safety fallback: ensure forward progress of at least 200px
-    if (bestCutY <= currentY + 200) {
+    // Safety fallback: ensure forward progress of at least 70% page height
+    if (bestCutY <= currentY + pageHeightPx * 0.7) {
       bestCutY = idealY;
     }
 
@@ -145,26 +163,19 @@ function calculateSmartPageBreaks(
 
 /**
  * Calculates adaptive rendering scale based on container height in pixels.
- * Shorter documents get ultra-crisp Retina quality (scale 2), while longer
- * documents scale down to fit safely within browser canvas dimensions and RAM.
+ * Uses 2.5x (240 DPI print quality) for short/medium documents and 2.0x (Retina 192 DPI)
+ * for long documents. Never drops below 2.0x to guarantee crisp, sharp fonts.
  */
 function getAdaptiveScale(elementHeightPx: number): number {
-  if (elementHeightPx <= 7000) {
-    return 2.0; // 1-5 pages: Retina ultra-crisp
+  if (elementHeightPx <= 10000) {
+    return 2.5; // Ultra-crisp 240 DPI
   }
-  if (elementHeightPx <= 16000) {
-    return 1.5; // 6-14 pages: High DPI crisp
-  }
-  if (elementHeightPx <= 30000) {
-    return 1.25; // 15-26 pages: High performance
-  }
-  return 1.0; // 27+ pages: 1:1 scale to avoid exceeding browser limits
+  return 2.0; // Retina 192 DPI (lossless and sharp)
 }
 
 /**
  * Slices a master canvas into discrete A4 page canvases and appends them to jsPDF.
- * This ensures each page only stores its own single slice (typically 150KB - 300KB)
- * instead of the entire document's multi-megabyte image duplicated on every page.
+ * Uses lossless PNG compression and high-quality smoothing to ensure razor-sharp text and diagrams.
  */
 function addCanvasToPdfInPageSlices(
   pdf: jsPDF,
@@ -182,6 +193,11 @@ function addCanvasToPdfInPageSlices(
   sliceCanvas.width = canvas.width;
   const sliceCtx = sliceCanvas.getContext('2d');
 
+  if (sliceCtx) {
+    sliceCtx.imageSmoothingEnabled = true;
+    sliceCtx.imageSmoothingQuality = 'high';
+  }
+
   if (customBreaks && customBreaks.length > 1) {
     for (let i = 0; i < customBreaks.length - 1; i++) {
       const startY = customBreaks[i];
@@ -198,14 +214,15 @@ function addCanvasToPdfInPageSlices(
           0, 0, canvas.width, sliceHeight
         );
 
-        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+        // LOSSLESS PNG: eliminates JPEG compression artifacts, fuzzy text, and muddy lines
+        const sliceData = sliceCanvas.toDataURL('image/png');
         const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
 
         if (!isFirstChunk || i > 0) {
           pdf.addPage();
         }
 
-        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+        pdf.addImage(sliceData, 'PNG', 0, 0, imgWidthMm, sliceHeightMm, undefined, 'FAST');
       }
     }
   } else {
@@ -225,14 +242,15 @@ function addCanvasToPdfInPageSlices(
           0, 0, canvas.width, sliceHeight
         );
 
-        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+        // LOSSLESS PNG: eliminates JPEG compression artifacts, fuzzy text, and muddy lines
+        const sliceData = sliceCanvas.toDataURL('image/png');
         const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
 
         if (!isFirstChunk || pageCount > 0) {
           pdf.addPage();
         }
 
-        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+        pdf.addImage(sliceData, 'PNG', 0, 0, imgWidthMm, sliceHeightMm, undefined, 'FAST');
       }
 
       currentY += sliceHeight;
@@ -887,6 +905,8 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
             body {
               background-color: #ffffff !important;
               color: #111827 !important;
+              padding: 0 !important;
+              margin: 0 !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }

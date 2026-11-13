@@ -69,28 +69,30 @@ function escapeHtml(text: string): string {
 
 export const EXPORT_FORMAT_META: Record<
   ExportFormat,
-  { label: string; extension: string; mime: string; icon: string }
+  { label: string; extension: string; mime: string; icon: string; badge?: string }
 > = {
-  pdf: {
-    label: 'PDF (Download)',
-    extension: 'pdf',
-    mime: 'application/pdf',
-    icon: 'bi-file-earmark-pdf',
-  },
   print: {
-    label: 'Print to PDF (Vector)',
+    label: 'Vector PDF (Crisp & Searchable)',
     extension: 'pdf',
     mime: 'application/pdf',
     icon: 'bi-printer',
+    badge: 'Vector',
+  },
+  pdf: {
+    label: 'Direct PDF (High-DPI Download)',
+    extension: 'pdf',
+    mime: 'application/pdf',
+    icon: 'bi-file-earmark-pdf',
+    badge: 'High-DPI',
   },
   markdown: {
-    label: 'Markdown',
+    label: 'Markdown (.md)',
     extension: 'md',
     mime: 'text/markdown;charset=utf-8',
     icon: 'bi-file-earmark-text',
   },
   html: {
-    label: 'HTML',
+    label: 'HTML Document (.html)',
     extension: 'html',
     mime: 'text/html;charset=utf-8',
     icon: 'bi-filetype-html',
