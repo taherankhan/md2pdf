@@ -50,6 +50,99 @@ function assertCanvasWithinLimits(canvas: HTMLCanvasElement): void {
   }
 }
 
+export interface PdfMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const DEFAULT_PDF_MARGINS: PdfMargins = {
+  top: 15,
+  right: 15,
+  bottom: 15,
+  left: 15,
+};
+
+/**
+ * Calculates optimal page break points (Y coordinates in DOM pixels)
+ * so that headings, code blocks, tables, diagrams, and blockquotes
+ * are not cut in half across page boundaries.
+ */
+function calculateSmartPageBreaks(
+  container: HTMLElement,
+  pageHeightPx: number,
+  smartPageBreaks: boolean = true
+): number[] {
+  const containerRect = container.getBoundingClientRect();
+  const totalHeight = container.scrollHeight;
+  const breakPoints: number[] = [0];
+
+  if (!smartPageBreaks) {
+    let y = pageHeightPx;
+    while (y < totalHeight) {
+      breakPoints.push(y);
+      y += pageHeightPx;
+    }
+    breakPoints.push(totalHeight);
+    return breakPoints;
+  }
+
+  const targets = Array.from(
+    container.querySelectorAll(
+      'h1, h2, h3, h4, h5, h6, pre, table, tr, blockquote, .mermaid, img, p'
+    )
+  ) as HTMLElement[];
+
+  let currentY = 0;
+
+  while (currentY + pageHeightPx < totalHeight) {
+    const idealY = currentY + pageHeightPx;
+    let bestCutY = idealY;
+
+    for (const el of targets) {
+      const rect = el.getBoundingClientRect();
+      const elTop = rect.top - containerRect.top;
+      const elHeight = el.offsetHeight;
+      const elBottom = elTop + elHeight;
+      const tagName = el.tagName.toLowerCase();
+      const isHeading = /^h[1-6]$/.test(tagName);
+      const isAtomic = ['pre', 'table', 'blockquote', 'img'].includes(tagName) || el.classList.contains('mermaid');
+
+      // 1. Prevent Orphan Headings: If a heading begins within 140px of the page bottom, push to next page
+      if (isHeading && elTop < idealY && elTop > idealY - 140 && elTop > currentY + 150) {
+        bestCutY = Math.min(bestCutY, elTop);
+      }
+
+      // 2. Prevent Splitting Code Blocks, Tables, Blockquotes, Diagrams, Images
+      if (isAtomic && elTop < idealY && elBottom > idealY) {
+        // Only break before if the element fits within a single page
+        if (elHeight < pageHeightPx * 0.92 && elTop > currentY + 180) {
+          bestCutY = Math.min(bestCutY, elTop);
+        }
+      }
+
+      // 3. Prevent Orphan Paragraph lines near page bottom
+      if (tagName === 'p' && elTop < idealY && elBottom > idealY) {
+        if (elTop > idealY - 50 && elTop > currentY + 150) {
+          bestCutY = Math.min(bestCutY, elTop);
+        }
+      }
+    }
+
+    // Safety fallback: ensure forward progress of at least 200px
+    if (bestCutY <= currentY + 200) {
+      bestCutY = idealY;
+    }
+
+    breakPoints.push(bestCutY);
+    currentY = bestCutY;
+  }
+
+  breakPoints.push(totalHeight);
+  return breakPoints;
+}
+
 /**
  * Calculates adaptive rendering scale based on container height in pixels.
  * Shorter documents get ultra-crisp Retina quality (scale 2), while longer
@@ -79,43 +172,72 @@ function addCanvasToPdfInPageSlices(
   themeBgColor: string,
   imgWidthMm: number = 210,
   pageHeightMm: number = 297,
-  isFirstChunk: boolean = true
+  isFirstChunk: boolean = true,
+  customBreaks?: number[]
 ): void {
   const a4Ratio = pageHeightMm / imgWidthMm;
-  const pageHeightPx = Math.floor(canvas.width * a4Ratio);
-
-  let currentY = 0;
-  let pageCount = 0;
+  const standardPageHeightPx = Math.floor(canvas.width * a4Ratio);
 
   const sliceCanvas = document.createElement('canvas');
   sliceCanvas.width = canvas.width;
   const sliceCtx = sliceCanvas.getContext('2d');
 
-  while (currentY < canvas.height) {
-    const sliceHeight = Math.min(pageHeightPx, canvas.height - currentY);
-    sliceCanvas.height = sliceHeight;
+  if (customBreaks && customBreaks.length > 1) {
+    for (let i = 0; i < customBreaks.length - 1; i++) {
+      const startY = customBreaks[i];
+      const endY = customBreaks[i + 1];
+      const sliceHeight = Math.max(1, endY - startY);
 
-    if (sliceCtx) {
-      sliceCtx.fillStyle = themeBgColor || '#ffffff';
-      sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-      sliceCtx.drawImage(
-        canvas,
-        0, currentY, canvas.width, sliceHeight,
-        0, 0, canvas.width, sliceHeight
-      );
+      sliceCanvas.height = sliceHeight;
+      if (sliceCtx) {
+        sliceCtx.fillStyle = themeBgColor || '#ffffff';
+        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        sliceCtx.drawImage(
+          canvas,
+          0, startY, canvas.width, sliceHeight,
+          0, 0, canvas.width, sliceHeight
+        );
 
-      const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
-      const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
+        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+        const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
 
-      if (!isFirstChunk || pageCount > 0) {
-        pdf.addPage();
+        if (!isFirstChunk || i > 0) {
+          pdf.addPage();
+        }
+
+        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+      }
+    }
+  } else {
+    let currentY = 0;
+    let pageCount = 0;
+
+    while (currentY < canvas.height) {
+      const sliceHeight = Math.min(standardPageHeightPx, canvas.height - currentY);
+      sliceCanvas.height = sliceHeight;
+
+      if (sliceCtx) {
+        sliceCtx.fillStyle = themeBgColor || '#ffffff';
+        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        sliceCtx.drawImage(
+          canvas,
+          0, currentY, canvas.width, sliceHeight,
+          0, 0, canvas.width, sliceHeight
+        );
+
+        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92);
+        const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
+
+        if (!isFirstChunk || pageCount > 0) {
+          pdf.addPage();
+        }
+
+        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
       }
 
-      pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+      currentY += sliceHeight;
+      pageCount++;
     }
-
-    currentY += sliceHeight;
-    pageCount++;
   }
 
   // Cleanup offscreen slice canvas
@@ -132,13 +254,20 @@ async function renderElementToPdf(
   wrapperElement: HTMLElement,
   containerContentEl: HTMLElement,
   themeBgColor: string,
-  scale: number
+  scale: number,
+  smartPageBreaks: boolean = true
 ): Promise<void> {
   const CHUNK_HEIGHT_LIMIT = 18000;
   const totalHeight = wrapperElement.scrollHeight;
   const children = Array.from(containerContentEl.children) as HTMLElement[];
 
+  const a4Ratio = 297 / 210;
+  const pageHeightInDomPx = Math.floor(794 * a4Ratio);
+
   if (totalHeight <= CHUNK_HEIGHT_LIMIT || children.length <= 1) {
+    const domBreaks = calculateSmartPageBreaks(wrapperElement, pageHeightInDomPx, smartPageBreaks);
+    const canvasBreaks = domBreaks.map((b) => Math.round(b * scale));
+
     const canvas = await withTimeout(
       html2canvas(wrapperElement, {
         scale,
@@ -153,7 +282,7 @@ async function renderElementToPdf(
     );
 
     assertCanvasWithinLimits(canvas);
-    addCanvasToPdfInPageSlices(pdf, canvas, themeBgColor);
+    addCanvasToPdfInPageSlices(pdf, canvas, themeBgColor, 210, 297, true, canvasBreaks);
     canvas.width = 0;
     canvas.height = 0;
     return;
@@ -189,6 +318,9 @@ async function renderElementToPdf(
 
     await new Promise((r) => setTimeout(r, 80));
 
+    const domBreaks = calculateSmartPageBreaks(wrapperElement, pageHeightInDomPx, smartPageBreaks);
+    const canvasBreaks = domBreaks.map((b) => Math.round(b * scale));
+
     const chunkCanvas = await withTimeout(
       html2canvas(wrapperElement, {
         scale,
@@ -203,7 +335,7 @@ async function renderElementToPdf(
     );
 
     assertCanvasWithinLimits(chunkCanvas);
-    addCanvasToPdfInPageSlices(pdf, chunkCanvas, themeBgColor, 210, 297, i === 0);
+    addCanvasToPdfInPageSlices(pdf, chunkCanvas, themeBgColor, 210, 297, i === 0, canvasBreaks);
 
     chunkCanvas.width = 0;
     chunkCanvas.height = 0;
@@ -232,11 +364,15 @@ function mapRenderError(error: unknown): never {
 export interface PDFOptions {
   filename?: string;
   themeId?: string;
+  margins?: PdfMargins;
+  smartPageBreaks?: boolean;
 }
 
 const defaultOptions: PDFOptions = {
   filename: 'document.pdf',
   themeId: 'professional',
+  margins: DEFAULT_PDF_MARGINS,
+  smartPageBreaks: true,
 };
 
 /**
@@ -248,6 +384,7 @@ export const generatePDFFromMarkdown = async (
   options: PDFOptions = {}
 ): Promise<void> => {
   const opts = { ...defaultOptions, ...options };
+  const margins = opts.margins || DEFAULT_PDF_MARGINS;
 
   if (markdown.length > PDF_MAX_MARKDOWN_CHARS) {
     throw new PdfExportError(
@@ -266,7 +403,7 @@ export const generatePDFFromMarkdown = async (
   container.style.left = '-9999px';
   container.style.top = '0';
   container.style.width = '794px'; // A4 width in pixels at 96 DPI
-  container.style.padding = '40px';
+  container.style.padding = `${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
   container.style.backgroundColor = theme.colors.background;
   container.style.color = theme.colors.text;
   container.style.fontFamily = theme.fonts.body;
@@ -417,7 +554,14 @@ export const generatePDFFromMarkdown = async (
       compress: true,
     });
 
-    await renderElementToPdf(pdf, container, container, theme.colors.background, scale);
+    await renderElementToPdf(
+      pdf,
+      container,
+      container,
+      theme.colors.background,
+      scale,
+      opts.smartPageBreaks ?? true
+    );
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
     mapRenderError(error);
@@ -555,7 +699,7 @@ export const generatePDFFromElement = async (
             </style>
         </head>
         <body>
-            <div id="print-wrapper" style="padding: 20mm; min-height: 100vh; box-sizing: border-box;">
+            <div id="print-wrapper" style="padding: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm; min-height: 100vh; box-sizing: border-box;">
                 <div id="pdf-content">
                     ${sourceElement.innerHTML}
                 </div>
@@ -631,7 +775,14 @@ export const generatePDFFromElement = async (
     });
 
     const contentEl = sandboxDoc.getElementById('pdf-content') || printWrapper;
-    await renderElementToPdf(pdf, printWrapper, contentEl, theme.colors.background, scale);
+    await renderElementToPdf(
+      pdf,
+      printWrapper,
+      contentEl,
+      theme.colors.background,
+      scale,
+      opts.smartPageBreaks ?? true
+    );
 
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
@@ -648,6 +799,7 @@ export interface PrintOptions {
   markdown?: string;
   themeId?: string;
   title?: string;
+  margins?: PdfMargins;
 }
 
 /**
@@ -658,6 +810,7 @@ export interface PrintOptions {
 export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void> => {
   const theme = getTheme(options.themeId || 'professional');
   const title = options.title || 'document';
+  const margins = options.margins || DEFAULT_PDF_MARGINS;
 
   let printHtml = '';
   let customStyles = '';
@@ -718,7 +871,7 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
           * { box-sizing: border-box; }
           body {
             margin: 0;
-            padding: 10mm 15mm;
+            padding: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
             font-family: ${theme.fonts.body};
             color: ${theme.colors.text};
             background-color: #ffffff;
@@ -727,7 +880,7 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
           }
           @page {
             size: A4 portrait;
-            margin: 15mm 15mm 15mm 15mm;
+            margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
           }
           @media print {
             body {
