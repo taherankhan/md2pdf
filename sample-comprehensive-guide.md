@@ -22,36 +22,36 @@ The following diagram illustrates the global request path from end-user devices 
 
 ```mermaid
 flowchart TD
-    subgraph Clients["Edge & Client Tier"]
-        Web["Web SPA (React / Vite)"]
-        Mobile["Mobile App (iOS / Android)"]
+    subgraph Clients["Edge and Client Tier"]
+        Web["Web SPA Client"]
+        Mobile["Mobile App Client"]
         Partner["Partner API Gateways"]
     end
 
-    subgraph CDN["Global Edge CDN & WAF"]
-        Cloudflare["Cloudflare Anycast DNS & DDoS Protection"]
+    subgraph CDN["Global Edge CDN and WAF"]
+        Cloudflare["Cloudflare Anycast DNS"]
     end
 
     subgraph GatewayTier["API Gateway Cluster"]
-        Kong["Kong API Gateway (mTLS & Rate Limiting)"]
-        AuthSvc["Auth Service (OAuth2 / OIDC)"]
+        Kong["Kong API Gateway"]
+        AuthSvc["Auth Service"]
     end
 
-    subgraph ServiceMesh["Kubernetes Service Mesh (Istio)"]
-        OrderSvc["Order Service (Go)"]
-        InventorySvc["Inventory Service (Rust)"]
-        PaymentSvc["Payment Service (TypeScript)"]
-        AnalyticsSvc["Analytics Engine (Python)"]
+    subgraph ServiceMesh["Kubernetes Service Mesh"]
+        OrderSvc["Order Service Go"]
+        InventorySvc["Inventory Service Rust"]
+        PaymentSvc["Payment Service Node"]
+        AnalyticsSvc["Analytics Engine Python"]
     end
 
     subgraph EventStream["Distributed Event Bus"]
-        Kafka["Apache Kafka Event Cluster (3x Replicas)"]
+        Kafka["Kafka Event Cluster"]
     end
 
     subgraph StorageTier["Persistence Tier"]
-        MongoDB[("MongoDB Atlas (Transactions)")]
-        Redis[("Redis Cluster (In-Memory Cache)")]
-        ClickHouse[("ClickHouse (OLAP Analytics)")]
+        MongoDB[("MongoDB Database")]
+        Redis[("Redis Cache")]
+        ClickHouse[("ClickHouse OLAP")]
     end
 
     Web --> Cloudflare
@@ -64,7 +64,8 @@ flowchart TD
     Kong --> InventorySvc
     Kong --> PaymentSvc
 
-    OrderSvc <--> Redis
+    OrderSvc --> Redis
+    Redis --> OrderSvc
     OrderSvc --> MongoDB
     OrderSvc --> Kafka
 
@@ -94,23 +95,23 @@ sequenceDiagram
     participant Orders as Order Service
     participant Database as MongoDB Atlas
 
-    User->>Browser: Click "Sign in with Google"
-    Browser->>Auth: Request OAuth2 Authorization Code (PKCE)
-    Auth-->>Browser: Return Auth Code + State
-    Browser->>Gateway: POST /api/v1/auth/callback (code, verifier)
-    Gateway->>Auth: Exchange Code for Access & ID Tokens
-    Auth-->>Gateway: Return Validated Identity Payload
-    Gateway->>Database: Upsert User Profile & Create Session
+    User->>Browser: Click Google Sign In
+    Browser->>Auth: Request OAuth2 Authorization Code
+    Auth-->>Browser: Return Auth Code and State
+    Browser->>Gateway: POST callback with code
+    Gateway->>Auth: Exchange Code for Access Token
+    Auth-->>Gateway: Return Validated Profile
+    Gateway->>Database: Upsert User Profile
     Database-->>Gateway: User Record Confirmed
-    Gateway-->>Browser: Set Secure HttpOnly Session Cookie
+    Gateway-->>Browser: Set Session Cookie
     Note over Browser,Gateway: Session Established
 
-    Browser->>Gateway: GET /api/v1/orders (with Cookie)
-    Gateway->>Gateway: Validate Session & Inject X-User-Id
+    Browser->>Gateway: GET orders with Cookie
+    Gateway->>Gateway: Validate Session and Inject Headers
     Gateway->>Orders: Forward Request with Claims
-    Orders->>Database: Query Orders where userId = X
+    Orders->>Database: Query Orders by userId
     Database-->>Orders: Return 15 Order Documents
-    Orders-->>Gateway: 200 OK (JSON Payload)
+    Orders-->>Gateway: 200 OK JSON Payload
     Gateway-->>Browser: Render Orders Dashboard
 ```
 
@@ -283,48 +284,41 @@ class RealtimeAnomalyDetector:
 
 ## 5. Database Schema & Entity Relationships
 
-The data model uses strict relational integrity where needed, backed by flexible document representations for multi-tiered payloads.
-
 ```mermaid
 erDiagram
-    USERS ||--o{ ORDERS : places
-    USERS ||--o{ DOCUMENTS : owns
-    ORDERS ||--|{ ORDER_ITEMS : contains
-    DOCUMENTS ||--o{ SHARES : generates
-    PRODUCTS ||--o{ ORDER_ITEMS : referenced_in
+    CUSTOMER ||--o{ ORDER : places
+    CUSTOMER ||--o{ DOCUMENT : owns
+    ORDER ||--|{ LINE_ITEM : contains
+    DOCUMENT ||--o{ SHARE : generates
 
-    USERS {
+    CUSTOMER {
         string id PK
-        string email UK
+        string email
         string name
         string provider
-        timestamp created_at
     }
 
-    DOCUMENTS {
+    DOCUMENT {
         string id PK
         string user_id FK
         string title
-        text content
         string theme
         int version
-        timestamp updated_at
     }
 
-    ORDERS {
+    ORDER {
         string id PK
-        string user_id FK
-        decimal total_amount
+        string customer_id FK
+        float total_amount
         string status
-        timestamp created_at
     }
 
-    ORDER_ITEMS {
+    LINE_ITEM {
         string id PK
         string order_id FK
-        string product_id FK
+        string item_name
         int quantity
-        decimal unit_price
+        float unit_price
     }
 ```
 
@@ -357,24 +351,22 @@ ORDER BY order_date DESC;
 
 ## 6. Service Lifecycle State Machine
 
-Each microservice deployment undergoes deterministic state progression through self-healing health checkers and Istio traffic draining.
-
 ```mermaid
 stateDiagram-v2
     [*] --> Initializing : Pod Scheduled
-    Initializing --> HealthChecking : Environment & DB Ready
-    HealthChecking --> Ready : Liveness & Readiness 200 OK
-    HealthChecking --> Degraded : Startup Probe Timeout
+    Initializing --> HealthChecking : Environment Ready
+    HealthChecking --> Ready : Health Probes OK
+    HealthChecking --> Degraded : Startup Timeout
 
     state Ready {
         [*] --> ServingTraffic
-        ServingTraffic --> HighLoad : TPS > 50,000
+        ServingTraffic --> HighLoad : Traffic Spike
         HighLoad --> AutoScaling : HPA Triggered
         AutoScaling --> ServingTraffic : New Pods Online
     }
 
     Ready --> Draining : SIGTERM Received
-    Draining --> Terminated : Active Connections Closed
+    Draining --> Terminated : Connections Closed
     Terminated --> [*]
 ```
 
@@ -382,16 +374,14 @@ stateDiagram-v2
 
 ## 7. Performance Benchmarks & Capacity Matrix
 
-The performance benchmarks below were conducted on **Google Cloud c3-standard-8 instances** using `k6` load test clusters distributed across 3 global regions.
-
 | Tier / Component | Concurrency | Latency p50 (ms) | Latency p95 (ms) | Latency p99 (ms) | Error Rate | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Kong API Gateway** | 100,000 req/s | 1.2 ms | 3.4 ms | 6.8 ms | 0.000% | ✅ Target Met |
-| **Auth Token Exchange** | 25,000 req/s | 4.8 ms | 9.2 ms | 14.5 ms | 0.001% | ✅ Target Met |
-| **Order Creation (Go)** | 50,000 req/s | 2.5 ms | 6.1 ms | 11.2 ms | 0.000% | ✅ Target Met |
-| **Inventory Reserve (Rust)** | 75,000 req/s | 0.8 ms | 1.9 ms | 3.1 ms | 0.000% | ✅ Target Met |
-| **MongoDB Atlas (Replica)** | 40,000 ops/s | 3.1 ms | 7.9 ms | 15.3 ms | 0.002% | ✅ Target Met |
-| **Kafka Event Ingestion** | 250,000 msg/s | 1.1 ms | 2.8 ms | 5.2 ms | 0.000% | ✅ Target Met |
+| **Kong API Gateway** | 100,000 req/s | 1.2 ms | 3.4 ms | 6.8 ms | 0.000% | Target Met |
+| **Auth Token Exchange** | 25,000 req/s | 4.8 ms | 9.2 ms | 14.5 ms | 0.001% | Target Met |
+| **Order Creation Go** | 50,000 req/s | 2.5 ms | 6.1 ms | 11.2 ms | 0.000% | Target Met |
+| **Inventory Reserve Rust** | 75,000 req/s | 0.8 ms | 1.9 ms | 3.1 ms | 0.000% | Target Met |
+| **MongoDB Atlas Replica** | 40,000 ops/s | 3.1 ms | 7.9 ms | 15.3 ms | 0.002% | Target Met |
+| **Kafka Event Ingestion** | 250,000 msg/s | 1.1 ms | 2.8 ms | 5.2 ms | 0.000% | Target Met |
 
 ---
 
@@ -400,12 +390,12 @@ The performance benchmarks below were conducted on **Google Cloud c3-standard-8 
 Network transmission latency and queueing times are mathematically modeled via the Erlang-C formulation:
 
 ### 8.1 Little's Law for Steady-State Systems
-The average number of active requests $L$ in a stable system equals the average arrival rate $\lambda$ multiplied by the average time $W$ that a request spends in the system:
+The average number of active requests L in a stable system equals the average arrival rate multiplied by the average time:
 
 $$L = \lambda \times W$$
 
 ### 8.2 Latency Distribution Function
-For exponential service times with service rate $\mu$ and traffic intensity $\rho = \frac{\lambda}{\mu} < 1$:
+For exponential service times with service rate and traffic intensity:
 
 $$P(W > t) = e^{-\mu(1 - \rho)t}$$
 
@@ -417,8 +407,8 @@ $$\mathbb{E}[W] = \frac{1}{\mu - \lambda} = \frac{1}{\mu(1 - \rho)}$$
 
 - [x] Configure automated CI/CD pipeline in GitHub Actions
 - [x] Enable TLS 1.3 encryption across all public ingress points
-- [x] Configure Prometheus alerting for 5xx error rate spikes (> 0.5% for 2m)
-- [x] Deploy distributed Jaeger tracing with 5% adaptive head sampling
+- [x] Configure Prometheus alerting for 5xx error rate spikes
+- [x] Deploy distributed Jaeger tracing with adaptive sampling
 - [ ] Conduct chaos engineering test: simulate spontaneous MongoDB primary failover
 - [ ] Verify multi-region DNS failover within 30 seconds
 - [ ] Run automated vulnerability audit on container base images
