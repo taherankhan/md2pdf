@@ -1,7 +1,8 @@
 .login-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 10000;
+  cursor: default !important;
   background: rgba(4, 7, 18, 0.75);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);

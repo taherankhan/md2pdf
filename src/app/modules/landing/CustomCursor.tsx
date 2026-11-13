@@ -44,6 +44,7 @@ const CustomCursor: FC = () => {
 
     /* ── Show / Hide ──────────────────────────────────────── */
     const show = () => {
+      if (document.body.classList.contains('login-modal-open')) return;
       if (visibleRef.current) return;
       visibleRef.current = true;
       dot.classList.remove('custom-cursor-dot--hidden');
@@ -93,6 +94,12 @@ const CustomCursor: FC = () => {
       // Permanently flag this as a touch device and stay hidden
       if (e.pointerType === 'touch') {
         isTouchDeviceRef.current = true;
+        hide();
+        return;
+      }
+
+      // If modal is open, restore native cursor and keep custom cursor hidden
+      if (document.body.classList.contains('login-modal-open')) {
         hide();
         return;
       }

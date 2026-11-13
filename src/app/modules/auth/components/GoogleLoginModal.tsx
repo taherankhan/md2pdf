@@ -14,6 +14,18 @@ export const GoogleLoginModal: FC = () => {
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isLoginModalOpen) {
+      document.body.classList.add('login-modal-open');
+      document.body.classList.remove('has-custom-cursor');
+    } else {
+      document.body.classList.remove('login-modal-open');
+    }
+    return () => {
+      document.body.classList.remove('login-modal-open');
+    };
+  }, [isLoginModalOpen]);
+
+  useEffect(() => {
     if (!isLoginModalOpen) return;
 
     if (!googleClientId) {

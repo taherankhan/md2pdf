@@ -69,3 +69,36 @@ body.has-custom-cursor .lp-bento-theme-bubble,
 body.has-custom-cursor .lp-footer-dev-btn {
   cursor: none !important;
 }
+
+/* Modal Open: Always restore default browser cursor and disable custom cursor */
+body.login-modal-open,
+body.login-modal-open *,
+body.has-custom-cursor.login-modal-open,
+body.has-custom-cursor.login-modal-open *,
+.login-modal-overlay,
+.login-modal-overlay *,
+.login-modal-card,
+.login-modal-card * {
+  cursor: default !important;
+}
+
+body.login-modal-open button,
+body.login-modal-open a,
+body.login-modal-open [role="button"],
+body.has-custom-cursor.login-modal-open button,
+body.has-custom-cursor.login-modal-open a,
+body.has-custom-cursor.login-modal-open [role="button"],
+.login-modal-overlay button,
+.login-modal-overlay a,
+.login-modal-overlay [role="button"],
+.login-modal-close {
+  cursor: pointer !important;
+}
+
+body.login-modal-open .custom-cursor-dot,
+body.login-modal-open .custom-cursor-ring,
+body.login-modal-open .custom-cursor-click {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
