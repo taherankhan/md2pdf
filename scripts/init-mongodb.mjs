@@ -95,8 +95,27 @@ export async function initMongoDB() {
   console.log("Creating indexes on 'shares'...");
   await db.collection('shares').createIndex({ updatedAt: -1 }, { name: 'shares_updatedAt_desc' });
   await db.collection('shares').createIndex({ createdAt: -1 }, { name: 'shares_createdAt_desc' });
+  await db.collection('shares').createIndex({ documentId: 1 }, { name: 'shares_documentId_asc' });
 
-  // 2. Setup 'contact_messages' collection
+  // 2. Setup 'users' collection
+  if (!existingNames.has('users')) {
+    console.log("Creating 'users' collection...");
+    await db.createCollection('users');
+  }
+  console.log("Creating indexes on 'users'...");
+  await db.collection('users').createIndex({ googleId: 1 }, { unique: true, name: 'users_googleId_unique' });
+  await db.collection('users').createIndex({ email: 1 }, { name: 'users_email_idx' });
+
+  // 3. Setup 'documents' collection
+  if (!existingNames.has('documents')) {
+    console.log("Creating 'documents' collection...");
+    await db.createCollection('documents');
+  }
+  console.log("Creating indexes on 'documents'...");
+  await db.collection('documents').createIndex({ userId: 1, updatedAt: -1 }, { name: 'documents_userId_updatedAt' });
+  await db.collection('documents').createIndex({ shareId: 1 }, { name: 'documents_shareId_idx' });
+
+  // 4. Setup 'contact_messages' collection
   const contactValidator = {
     $jsonSchema: {
       bsonType: 'object',

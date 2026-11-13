@@ -18,6 +18,14 @@ import {
 import { toast } from "react-toastify";
 import type { EditorViewMode } from "./lib/editorHandle";
 import { loadEditorDraft, loadStoredTitle, saveEditorDraft } from "./lib/editorDraft";
+import { useAuth } from "../../../context/AuthContext";
+import { UserAvatarMenu } from "../auth/components/UserAvatarMenu";
+import { DocumentDrawer } from "./components/DocumentDrawer";
+import {
+    fetchDocumentById,
+    updateDocument,
+    createDocument,
+} from "../../../services/documentService";
 
 const defaultMarkdown = `# Welcome to Markdown to PDF Converter
 
@@ -67,6 +75,11 @@ Visit [Google](https://www.google.com) for more information.
 const EditorPage: FC = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    const { isAuthenticated, openLoginModal } = useAuth();
+    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [activeDocId, setActiveDocId] = useState<string | null>(() => searchParams.get("doc"));
+    const [isCloudSaving, setIsCloudSaving] = useState(false);
+
     const [markdownContent, setMarkdownContent] = useState(defaultMarkdown);
     const [debouncedMarkdown, setDebouncedMarkdown] = useState(defaultMarkdown);
     const [selectedTheme, setSelectedTheme] = useState("professional");
@@ -79,6 +92,7 @@ const EditorPage: FC = () => {
     const draftHydratedRef = useRef(false);
 
     const shareId = searchParams.get("share");
+    const docIdParam = searchParams.get("doc");
 
     const markdownRef = useRef(markdownContent);
     const themeRef = useRef(selectedTheme);
@@ -128,7 +142,7 @@ const EditorPage: FC = () => {
 
     useEffect(() => {
         if (draftHydratedRef.current) return;
-        if (shareId) {
+        if (shareId || docIdParam) {
             draftHydratedRef.current = true;
             return;
         }
@@ -151,9 +165,66 @@ const EditorPage: FC = () => {
         };
         AnalyticsService.events.editorDraftRestore();
         toast.info("Restored your last local draft.", { autoClose: 2500 });
-    }, [shareId]);
+    }, [shareId, docIdParam]);
 
     useEffect(() => {
+        if (searchParams.get("files") === "open") {
+            setIsDrawerOpen(true);
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.delete("files");
+            setSearchParams(nextParams, { replace: true });
+        }
+    }, [searchParams]);
+
+    useEffect(() => {
+        if (!docIdParam || !isAuthenticated) return;
+        let isMounted = true;
+        fetchDocumentById(docIdParam)
+            .then((doc) => {
+                if (!isMounted) return;
+                setMarkdownContent(doc.content);
+                setDebouncedMarkdown(doc.content);
+                setDocumentTitle(doc.title || "Untitled document");
+                if (doc.theme) setSelectedTheme(doc.theme);
+                setActiveDocId(doc._id);
+                currentVersionRef.current = doc.version || 1;
+                lastSyncedPayload.current = {
+                    content: doc.content,
+                    theme: doc.theme || "professional",
+                    title: doc.title,
+                };
+            })
+            .catch((err) => {
+                console.warn("Failed to load document from URL param:", err);
+            });
+        return () => {
+            isMounted = false;
+        };
+    }, [docIdParam, isAuthenticated]);
+
+    // Cloud auto-save for authenticated user's active document
+    useEffect(() => {
+        if (!activeDocId || !isAuthenticated) return;
+        setIsCloudSaving(true);
+        const handler = setTimeout(async () => {
+            try {
+                await updateDocument(activeDocId, {
+                    content: markdownContent,
+                    title: documentTitle,
+                    theme: selectedTheme,
+                });
+            } catch (err) {
+                console.error("Failed to auto-save to cloud:", err);
+            } finally {
+                setIsCloudSaving(false);
+            }
+        }, 1000);
+        return () => clearTimeout(handler);
+    }, [activeDocId, isAuthenticated, markdownContent, documentTitle, selectedTheme]);
+
+    // Local draft auto-save for unauthenticated or unsaved documents
+    useEffect(() => {
+        if (activeDocId) return;
         const handler = setTimeout(() => {
             saveEditorDraft({
                 content: markdownContent,
@@ -163,7 +234,7 @@ const EditorPage: FC = () => {
             });
         }, 800);
         return () => clearTimeout(handler);
-    }, [markdownContent, documentTitle, selectedTheme]);
+    }, [activeDocId, markdownContent, documentTitle, selectedTheme]);
 
     const notifyRemoteUpdate = (message: string) => {
         if (Date.now() < suppressRemoteUntilRef.current) return;
@@ -341,6 +412,67 @@ const EditorPage: FC = () => {
         reader.readAsText(file);
     };
 
+    const handleSelectDocument = async (docId: string) => {
+        try {
+            const doc = await fetchDocumentById(docId);
+            setMarkdownContent(doc.content);
+            setDebouncedMarkdown(doc.content);
+            setDocumentTitle(doc.title || "Untitled document");
+            if (doc.theme) setSelectedTheme(doc.theme);
+            setActiveDocId(doc._id);
+            currentVersionRef.current = doc.version || 1;
+            lastSyncedPayload.current = {
+                content: doc.content,
+                theme: doc.theme || "professional",
+                title: doc.title,
+            };
+            const nextParams: Record<string, string> = { doc: doc._id };
+            if (doc.shareId) nextParams.share = doc.shareId;
+            setSearchParams(nextParams);
+            toast.success(`Opened "${doc.title || 'Untitled document'}"`);
+        } catch (err: any) {
+            toast.error(err.message || "Failed to load document");
+        }
+    };
+
+    const handleNewDocument = () => {
+        setActiveDocId(null);
+        setMarkdownContent(defaultMarkdown);
+        setDebouncedMarkdown(defaultMarkdown);
+        setDocumentTitle("Untitled document");
+        setSelectedTheme("professional");
+        setSearchParams({});
+        currentVersionRef.current = 1;
+        lastSyncedPayload.current = {
+            content: defaultMarkdown,
+            theme: "professional",
+            title: "Untitled document",
+        };
+        toast.info("Created new document");
+    };
+
+    const handleSaveToCloud = async () => {
+        if (!isAuthenticated) {
+            openLoginModal();
+            return;
+        }
+        try {
+            setIsCloudSaving(true);
+            const doc = await createDocument({
+                title: documentTitle || "Untitled document",
+                content: markdownContent,
+                theme: selectedTheme,
+            });
+            setActiveDocId(doc._id);
+            setSearchParams({ doc: doc._id });
+            toast.success("Document saved to your cloud library!");
+        } catch (err: any) {
+            toast.error(err.message || "Failed to save to cloud");
+        } finally {
+            setIsCloudSaving(false);
+        }
+    };
+
     const layoutModeClass =
         fullScreenPane === 'editor'
             ? 'layout-mode-edit'
@@ -364,6 +496,23 @@ const EditorPage: FC = () => {
                         <i className="bi bi-arrow-left"></i>
                     </button>
                     <div className="toolbar-divider"></div>
+                    <button
+                        type="button"
+                        className="editor-files-btn"
+                        onClick={() => {
+                            if (isAuthenticated) {
+                                setIsDrawerOpen(true);
+                            } else {
+                                openLoginModal();
+                                toast.info("Sign in to access your cloud library.");
+                            }
+                        }}
+                        title={isAuthenticated ? "Open My Files" : "Sign in to save and manage documents"}
+                    >
+                        <i className="bi bi-folder2-open" aria-hidden />
+                        <span className="editor-files-label">My Files</span>
+                    </button>
+                    <div className="toolbar-divider"></div>
                     <input
                         type="text"
                         className="editor-doc-title-input"
@@ -372,6 +521,15 @@ const EditorPage: FC = () => {
                         placeholder="Untitled document"
                         aria-label="Document title"
                     />
+                    {activeDocId && (
+                        <span
+                            className={`editor-cloud-status ${isCloudSaving ? 'saving' : ''}`}
+                            title="Auto-saves to MongoDB Atlas in real time"
+                        >
+                            <i className={`bi ${isCloudSaving ? 'bi-arrow-repeat' : 'bi-cloud-check'}`}></i>
+                            <span>{isCloudSaving ? 'Saving...' : 'Saved to cloud'}</span>
+                        </span>
+                    )}
                 </div>
 
                 <div className="toolbar-right">
@@ -395,6 +553,7 @@ const EditorPage: FC = () => {
                     <ShareLinkButton
                         payload={buildSharePayload()}
                         shareId={shareId || undefined}
+                        documentId={activeDocId || undefined}
                         onShareIdChange={handleShareIdChange}
                         onSaveSuccess={(saved, version) => {
                             if (typeof version === 'number') {
@@ -412,12 +571,26 @@ const EditorPage: FC = () => {
                         selectedTheme={selectedTheme}
                         onThemeChange={setSelectedTheme}
                     />
+                    {isAuthenticated && !activeDocId && (
+                        <button
+                            type="button"
+                            className="editor-files-btn"
+                            onClick={handleSaveToCloud}
+                            disabled={isCloudSaving}
+                            title="Save current draft into your cloud library"
+                        >
+                            <i className="bi bi-cloud-arrow-up" aria-hidden />
+                            <span>{isCloudSaving ? 'Saving...' : 'Save to Cloud'}</span>
+                        </button>
+                    )}
                     <ExportButton
                         markdown={markdownContent}
                         themeId={selectedTheme}
                         previewRef={previewRef}
                         exportBaseName={documentTitle}
                     />
+                    <div className="toolbar-divider" aria-hidden />
+                    <UserAvatarMenu onOpenFiles={() => setIsDrawerOpen(true)} />
                 </div>
             </div>
 
@@ -454,6 +627,14 @@ const EditorPage: FC = () => {
                     )}
                 </div>
             </div>
+
+            <DocumentDrawer
+                isOpen={isDrawerOpen}
+                activeDocId={activeDocId}
+                onClose={() => setIsDrawerOpen(false)}
+                onSelectDocument={handleSelectDocument}
+                onNewDocument={handleNewDocument}
+            />
         </div>
     );
 };

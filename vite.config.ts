@@ -4,7 +4,7 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  envPrefix: ['VITE_', 'GA_'],
+  envPrefix: ['VITE_', 'GA_', 'GOOGLE_'],
   plugins: [
     react(),
     {

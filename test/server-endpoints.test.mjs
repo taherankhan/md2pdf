@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { PassThrough } from 'node:stream';
 import app from '../server/app.js';
+import { createSessionToken } from '../server/auth.js';
 
 // Setup in-memory mock for MongoDB
 const mockShares = new Map();
+const mockDocuments = new Map();
+const mockUsers = new Map();
 const mockContact = [];
 
 const mockDb = {
@@ -34,6 +37,113 @@ const mockDb = {
           }
           mockShares.set(filter._id, updated);
           return options?.returnDocument === 'after' ? { ...updated } : { ...existing };
+        },
+        async updateOne(filter, update) {
+          const existing = mockShares.get(filter._id);
+          if (!existing) return { modifiedCount: 0 };
+          if (update.$set) Object.assign(existing, update.$set);
+          if (update.$inc) {
+            for (const [key, val] of Object.entries(update.$inc)) {
+              existing[key] = (existing[key] || 0) + val;
+            }
+          }
+          mockShares.set(filter._id, existing);
+          return { modifiedCount: 1 };
+        },
+        async deleteOne(filter) {
+          const existed = mockShares.delete(filter._id);
+          return { deletedCount: existed ? 1 : 0 };
+        },
+      };
+    }
+    if (name === 'documents') {
+      return {
+        async insertOne(doc) {
+          mockDocuments.set(doc._id, { ...doc });
+          return { acknowledged: true, insertedId: doc._id };
+        },
+        find(filter, options) {
+          const docs = Array.from(mockDocuments.values()).filter((d) => d.userId === filter.userId);
+          return {
+            sort() {
+              return {
+                async toArray() {
+                  return docs.map((d) => {
+                    const copy = { ...d };
+                    if (options?.projection?.content === 0) delete copy.content;
+                    return copy;
+                  });
+                },
+              };
+            },
+          };
+        },
+        async findOne(filter) {
+          const doc = mockDocuments.get(filter._id);
+          if (!doc) return null;
+          if (filter.userId && doc.userId !== filter.userId) return null;
+          return { ...doc };
+        },
+        async findOneAndUpdate(filter, update, options) {
+          const existing = mockDocuments.get(filter._id);
+          if (!existing || (filter.userId && existing.userId !== filter.userId)) return null;
+
+          const updated = { ...existing };
+          if (update.$set) Object.assign(updated, update.$set);
+          if (update.$inc) {
+            for (const [key, val] of Object.entries(update.$inc)) {
+              updated[key] = (updated[key] || 0) + val;
+            }
+          }
+          mockDocuments.set(filter._id, updated);
+          return options?.returnDocument === 'after' ? { ...updated } : { ...existing };
+        },
+        async updateOne(filter, update) {
+          const existing = mockDocuments.get(filter._id);
+          if (!existing) return { modifiedCount: 0 };
+          if (filter.userId && existing.userId !== filter.userId) return { modifiedCount: 0 };
+          if (update.$set) Object.assign(existing, update.$set);
+          if (update.$inc) {
+            for (const [key, val] of Object.entries(update.$inc)) {
+              existing[key] = (existing[key] || 0) + val;
+            }
+          }
+          mockDocuments.set(filter._id, existing);
+          return { modifiedCount: 1 };
+        },
+        async deleteOne(filter) {
+          const existed = mockDocuments.delete(filter._id);
+          return { deletedCount: existed ? 1 : 0 };
+        },
+      };
+    }
+    if (name === 'users') {
+      return {
+        async findOne(query) {
+          for (const u of mockUsers.values()) {
+            if (query.googleId && u.googleId === query.googleId) return { ...u };
+            if (query._id && u._id === query._id) return { ...u };
+          }
+          return null;
+        },
+        async findOneAndUpdate(filter, update) {
+          let user = null;
+          for (const u of mockUsers.values()) {
+            if (filter.googleId && u.googleId === filter.googleId) {
+              user = u;
+              break;
+            }
+          }
+          if (!user) {
+            user = {
+              _id: update.$setOnInsert?._id || 'user-1',
+              googleId: filter.googleId,
+              createdAt: update.$setOnInsert?.createdAt || new Date(),
+            };
+          }
+          if (update.$set) Object.assign(user, update.$set);
+          mockUsers.set(user._id, user);
+          return { value: { ...user } };
         },
       };
     }
@@ -388,6 +498,118 @@ async function runTests() {
     assert.equal(res.status, 201);
     const body = await res.json();
     assert.ok(body.id);
+  });
+
+  // 9. Authentication Routes
+  await test('GET /api/auth/me returns 401 when not logged in', async () => {
+    const res = await request(app, {
+      method: 'GET',
+      url: '/api/auth/me',
+    });
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.user, null);
+  });
+
+  const testUserToken = createSessionToken({
+    userId: 'user-test-123',
+    email: 'user@example.com',
+    name: 'Test User',
+    picture: 'https://example.com/avatar.jpg',
+  });
+
+  await test('GET /api/auth/me returns user profile when session token provided', async () => {
+    const res = await request(app, {
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { Authorization: `Bearer ${testUserToken}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.user.userId, 'user-test-123');
+    assert.equal(body.user.email, 'user@example.com');
+  });
+
+  // 10. Document Library CRUD & Direct Live Sync
+  let createdDocId = '';
+  await test('POST /api/documents creates private document for authenticated user', async () => {
+    const res = await request(app, {
+      method: 'POST',
+      url: '/api/documents',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${testUserToken}`,
+      },
+      body: {
+        title: 'My Project Architecture',
+        content: '# Architecture\n\nOverview of the system.',
+        theme: 'ocean',
+      },
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.ok(body._id);
+    createdDocId = body._id;
+    assert.equal(body.userId, 'user-test-123');
+    assert.equal(body.title, 'My Project Architecture');
+    assert.equal(body.theme, 'ocean');
+  });
+
+  await test('GET /api/documents lists user documents', async () => {
+    const res = await request(app, {
+      method: 'GET',
+      url: '/api/documents',
+      headers: { Authorization: `Bearer ${testUserToken}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.documents));
+    assert.equal(body.documents.length, 1);
+    assert.equal(body.documents[0]._id, createdDocId);
+    assert.equal(body.documents[0].title, 'My Project Architecture');
+  });
+
+  let linkedShareId = '';
+  await test('POST /api/documents/:id/share publishes document and generates public shareId', async () => {
+    const res = await request(app, {
+      method: 'POST',
+      url: `/api/documents/${createdDocId}/share`,
+      headers: { Authorization: `Bearer ${testUserToken}` },
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.ok(body.shareId);
+    linkedShareId = body.shareId;
+  });
+
+  await test('Direct Live Sync: public edit via PUT /api/shares/:id automatically updates owner document in main db', async () => {
+    // 1. Guest/public editor updates content via public link endpoint
+    const res = await request(app, {
+      method: 'PUT',
+      url: `/api/shares/${linkedShareId}`,
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        content: '# Architecture\n\nUpdated by public collaborator via share link!',
+        theme: 'dracula',
+        title: 'My Project Architecture (Revised)',
+      },
+    });
+    assert.equal(res.status, 200);
+
+    // 2. Verify that owner document in documents collection was updated directly!
+    const docCheckRes = await request(app, {
+      method: 'GET',
+      url: `/api/documents/${createdDocId}`,
+      headers: { Authorization: `Bearer ${testUserToken}` },
+    });
+    assert.equal(docCheckRes.status, 200);
+    const updatedDoc = await docCheckRes.json();
+    assert.equal(
+      updatedDoc.content,
+      '# Architecture\n\nUpdated by public collaborator via share link!'
+    );
+    assert.equal(updatedDoc.theme, 'dracula');
+    assert.equal(updatedDoc.title, 'My Project Architecture (Revised)');
   });
 
   console.log(`\n================================`);

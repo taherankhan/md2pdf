@@ -5,14 +5,17 @@ import { AppRoutes } from './app/routing/AppRoutes';
 import { ToastContainer } from 'react-toastify';
 import { hideSplashScreen } from './utils/hideSplashScreen';
 import { runWhenIdle } from './utils/deferNonCritical';
+import { AuthProvider } from './context/AuthContext';
+import { GoogleLoginModal } from './app/modules/auth/components/GoogleLoginModal';
 
 const container = document.getElementById('root');
 if (container) {
   createRoot(container).render(
-    <>
+    <AuthProvider>
       <ToastContainer />
       <AppRoutes />
-    </>
+      <GoogleLoginModal />
+    </AuthProvider>
   );
 
   runWhenIdle(() => {

@@ -4,6 +4,7 @@
  */
 
 import LZString from 'lz-string';
+import { getAuthHeaders } from './authService';
 
 export interface SharePayload {
   content: string;
@@ -88,15 +89,17 @@ function getApiBaseUrl(): string {
 /**
  * Save payload (content, theme, title) to MongoDB backend. Returns the UUID of the share.
  */
-export async function saveSharePayloadToDb(payload: SharePayload): Promise<string> {
+export async function saveSharePayloadToDb(payload: SharePayload, documentId?: string): Promise<string> {
   const apiBase = getApiBaseUrl();
   const response = await fetch(`${apiBase}/api/shares`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
+    credentials: 'include',
     body: JSON.stringify({
       content: payload.content,
       theme: payload.theme ?? 'professional',
       title: normalizeShareTitle(payload.title),
+      documentId: documentId || null,
     }),
   });
 
@@ -181,7 +184,8 @@ export async function updateSharePayloadInDb(
   const apiBase = getApiBaseUrl();
   const response = await fetch(`${apiBase}/api/shares/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
+    credentials: 'include',
     body: JSON.stringify({
       content: payload.content,
       theme: payload.theme ?? 'professional',

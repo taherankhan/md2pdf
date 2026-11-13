@@ -11,11 +11,12 @@ import {
 interface ShareLinkButtonProps {
   payload: SharePayload;
   shareId?: string;
+  documentId?: string;
   onShareIdChange?: (id: string, options?: { skipLoad?: boolean }) => void;
   onSaveSuccess?: (payload: SharePayload, version?: number) => void;
 }
 
-const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, onShareIdChange, onSaveSuccess }) => {
+const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, documentId, onShareIdChange, onSaveSuccess }) => {
   const [copied, setCopied] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -24,7 +25,7 @@ const ShareLinkButton: FC<ShareLinkButtonProps> = ({ payload, shareId, onShareId
     try {
       setIsSharing(true);
       // Attempt database save
-      const id = await saveSharePayloadToDb(payload);
+      const id = await saveSharePayloadToDb(payload, documentId);
       const url = buildDbShareUrl(id);
       
       await navigator.clipboard.writeText(url);

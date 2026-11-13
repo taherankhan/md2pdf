@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import LandingLogoMark from './components/LandingLogoMark';
 import { scrollToSection } from './utils/scrollTo';
 import { AnalyticsService } from '../../../services/AnalyticsService';
+import { UserAvatarMenu } from '../auth/components/UserAvatarMenu';
 import './LandingHeader.css';
 
 const NAV_LINKS = [
@@ -195,6 +196,8 @@ const LandingHeader: FC = () => {
 
           {/* Right-side actions */}
           <div className="lp-header-actions">
+            <UserAvatarMenu onOpenFiles={() => navigate('/editor?files=open')} />
+
             {/* Desktop CTA */}
             <button
               type="button"
