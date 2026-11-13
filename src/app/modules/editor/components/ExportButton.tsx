@@ -40,7 +40,7 @@ const ExportButton: FC<ExportButtonProps> = ({
     const [isExporting, setIsExporting] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('print');
+    const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pdf');
     const [margins, setMargins] = useState<PdfMargins>(() => {
         try {
             const saved = localStorage.getItem('md2pdf_margins');
@@ -204,7 +204,7 @@ const ExportButton: FC<ExportButtonProps> = ({
 
             {menuOpen && (
                 <div className="export-menu-dropdown" role="listbox" aria-label="Export format">
-                    {(['print', 'pdf', 'markdown', 'html'] as const).map((format) => {
+                    {(['pdf', 'print', 'markdown', 'html'] as const).map((format) => {
                         const meta = EXPORT_FORMAT_META[format];
                         const active = selectedFormat === format;
                         return (

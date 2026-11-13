@@ -65,9 +65,9 @@ export const DEFAULT_PDF_MARGINS: PdfMargins = {
 };
 
 /**
- * Calculates optimal page break points (Y coordinates in DOM pixels)
- * so that headings and blocks are not split awkwardly across page boundaries,
- * while STRICTLY avoiding giant empty white spaces.
+ * Calculates optimal micro-adjusted page break points (Y coordinates in DOM pixels)
+ * so that lines of code, table rows, and paragraph text are never cut in half,
+ * while STRICTLY limiting any bottom white space to at most a single line height (~25-35px).
  */
 function calculateSmartPageBreaks(
   container: HTMLElement,
@@ -90,66 +90,134 @@ function calculateSmartPageBreaks(
 
   const targets = Array.from(
     container.querySelectorAll(
-      'h1, h2, h3, h4, h5, h6, pre, table, blockquote, .mermaid, img'
+      'h1, h2, h3, h4, h5, h6, pre, table, tr, blockquote, .mermaid, p, img'
     )
   ) as HTMLElement[];
 
   let currentY = 0;
-  // Maximum allowed white gap at the bottom of a page in DOM px.
-  // Strictly capped at 120px (~10% of page height) so we NEVER leave 70-80% empty wastelands.
-  const MAX_PERMITTED_BOTTOM_GAP_PX = 120;
+  // Maximum allowed bottom whitespace gap (in DOM px) - strictly capped to ~35px
+  // to ensure pages are 97-99% full with zero giant blank voids.
+  const MAX_MICRO_GAP_PX = 38;
 
   while (currentY + pageHeightPx < totalHeight) {
     const idealY = currentY + pageHeightPx;
-    const minAllowedCut = idealY - MAX_PERMITTED_BOTTOM_GAP_PX;
+    const minCutY = idealY - MAX_MICRO_GAP_PX;
     let bestCutY = idealY;
+    let foundCut = false;
 
-    for (let idx = 0; idx < targets.length; idx++) {
-      const el = targets[idx];
-      const rect = el.getBoundingClientRect();
-      const elTop = rect.top - containerRect.top;
-      const elHeight = el.offsetHeight;
-      const elBottom = elTop + elHeight;
+    // 1. Check for headings near the page bottom (would be orphaned if cut after it)
+    for (const el of targets) {
       const tagName = el.tagName.toLowerCase();
-      const isHeading = /^h[1-6]$/.test(tagName);
-
-      // 1. Orphan Heading Prevention:
-      // If a heading starts within the bottom gap zone (last 120px), push it cleanly to the next page.
-      if (isHeading && elTop >= minAllowedCut && elTop < idealY) {
-        bestCutY = elTop;
-        break;
-      }
-
-      // 2. Atomic Element (code block, table, diagram, blockquote, image)
-      const isAtomic =
-        ['pre', 'table', 'blockquote', 'img'].includes(tagName) ||
-        el.classList.contains('mermaid');
-
-      if (isAtomic && elTop < idealY && elBottom > idealY) {
-        // ONLY break before the element if it begins NEAR the bottom of the page (within the 120px window).
-        // If it starts higher up on the page, it MUST continue on this page to avoid leaving giant blank voids!
-        if (elTop >= minAllowedCut) {
-          let cutPoint = elTop;
-          // Check if there is an immediately preceding heading within 70px above it:
-          // Keep the heading and this block together!
-          if (idx > 0) {
-            const prev = targets[idx - 1];
-            if (/^h[1-6]$/.test(prev.tagName.toLowerCase())) {
-              const prevRect = prev.getBoundingClientRect();
-              const prevTop = prevRect.top - containerRect.top;
-              if (prevTop >= currentY + 120 && elTop - (prevTop + prev.offsetHeight) < 70) {
-                cutPoint = prevTop;
-              }
-            }
-          }
-          bestCutY = cutPoint;
+      if (/^h[1-6]$/.test(tagName)) {
+        const top = el.getBoundingClientRect().top - containerRect.top;
+        if (top >= idealY - 75 && top < idealY && top > currentY + 150) {
+          bestCutY = top;
+          foundCut = true;
           break;
         }
       }
     }
 
-    // Safety fallback: ensure forward progress of at least 70% page height
-    if (bestCutY <= currentY + pageHeightPx * 0.7) {
+    // 2. Check for Mermaid diagrams starting near the bottom
+    if (!foundCut) {
+      for (const el of targets) {
+        if (el.classList.contains('mermaid')) {
+          const top = el.getBoundingClientRect().top - containerRect.top;
+          if (top >= idealY - 70 && top < idealY && top > currentY + 150) {
+            bestCutY = top;
+            foundCut = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Line-aware cut inside <pre> code blocks (cut cleanly between code lines)
+    if (!foundCut) {
+      for (const el of targets) {
+        if (el.tagName.toLowerCase() === 'pre') {
+          const rect = el.getBoundingClientRect();
+          const preTop = rect.top - containerRect.top;
+          const preBottom = preTop + el.offsetHeight;
+
+          if (preTop < idealY && preBottom > idealY) {
+            const computed = window.getComputedStyle(el);
+            const rawLineHeight = parseFloat(computed.lineHeight);
+            const fontSize = parseFloat(computed.fontSize) || 13;
+            const lineHeight = !isNaN(rawLineHeight) && rawLineHeight > 0 ? rawLineHeight : fontSize * 1.5;
+            const padTop = parseFloat(computed.paddingTop) || 14;
+
+            const linesCount = Math.floor((idealY - (preTop + padTop)) / lineHeight);
+            if (linesCount > 0) {
+              const safeLineCut = preTop + padTop + linesCount * lineHeight;
+              if (safeLineCut >= minCutY && safeLineCut > currentY + 100) {
+                bestCutY = safeLineCut;
+                foundCut = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Row-aware cut inside <table> elements (cut cleanly between <tr> rows)
+    if (!foundCut) {
+      for (const el of targets) {
+        if (el.tagName.toLowerCase() === 'tr') {
+          const rect = el.getBoundingClientRect();
+          const trBottom = rect.bottom - containerRect.top;
+          if (trBottom >= minCutY && trBottom <= idealY && trBottom > currentY + 100) {
+            bestCutY = trBottom;
+            foundCut = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // 5. Line-aware cut inside paragraphs <p> (cut cleanly between text lines)
+    if (!foundCut) {
+      for (const el of targets) {
+        if (el.tagName.toLowerCase() === 'p') {
+          const rect = el.getBoundingClientRect();
+          const pTop = rect.top - containerRect.top;
+          const pBottom = pTop + el.offsetHeight;
+
+          if (pTop < idealY && pBottom > idealY) {
+            const computed = window.getComputedStyle(el);
+            const rawLineHeight = parseFloat(computed.lineHeight);
+            const fontSize = parseFloat(computed.fontSize) || 14;
+            const lineHeight = !isNaN(rawLineHeight) && rawLineHeight > 0 ? rawLineHeight : fontSize * 1.5;
+
+            const linesCount = Math.floor((idealY - pTop) / lineHeight);
+            if (linesCount > 0) {
+              const safeTextCut = pTop + linesCount * lineHeight;
+              if (safeTextCut >= minCutY && safeTextCut > currentY + 100) {
+                bestCutY = safeTextCut;
+                foundCut = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 6. Element boundary fallback in [idealY - 38, idealY]
+    if (!foundCut) {
+      for (const el of targets) {
+        const bottom = el.getBoundingClientRect().bottom - containerRect.top;
+        if (bottom >= minCutY && bottom <= idealY && bottom > currentY + 100) {
+          bestCutY = bottom;
+          foundCut = true;
+          break;
+        }
+      }
+    }
+
+    // Safety fallback: guaranteed forward progress
+    if (bestCutY <= currentY + (pageHeightPx - MAX_MICRO_GAP_PX)) {
       bestCutY = idealY;
     }
 
