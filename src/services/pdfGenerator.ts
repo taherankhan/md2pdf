@@ -64,373 +64,375 @@ export const DEFAULT_PDF_MARGINS: PdfMargins = {
   left: 15,
 };
 
-/**
- * Calculates optimal micro-adjusted page break points (Y coordinates in DOM pixels)
- * so that lines of code, table rows, and paragraph text are never cut in half,
- * while STRICTLY limiting any bottom white space to at most a single line height (~25-35px).
- */
-function calculateSmartPageBreaks(
-  container: HTMLElement,
-  pageHeightPx: number,
-  smartPageBreaks: boolean = true
-): number[] {
-  const containerRect = container.getBoundingClientRect();
-  const totalHeight = container.scrollHeight;
-  const breakPoints: number[] = [0];
+const A4_WIDTH_PX = 794;
+const A4_HEIGHT_PX = 1123;
+const MM_TO_PX = 794 / 210; // ~3.78095 px per mm at 96 DPI
 
-  if (!smartPageBreaks) {
-    let y = pageHeightPx;
-    while (y < totalHeight) {
-      breakPoints.push(y);
-      y += pageHeightPx;
+const isHeadingElement = (el: HTMLElement): boolean => /^H[1-6]$/i.test(el.tagName);
+
+/**
+ * Converts images in the sandbox document to Base64 to prevent cross-origin canvas errors.
+ */
+async function processSandboxImages(doc: Document): Promise<void> {
+  const images = doc.querySelectorAll('img');
+  const imagePromises = Array.from(images).map(async (img) => {
+    const originalSrc = img.src;
+    if (!originalSrc || originalSrc.startsWith('data:')) return;
+
+    try {
+      const response = await fetch(originalSrc);
+      const blob = await response.blob();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      if (base64Data) {
+        img.src = base64Data;
+        img.removeAttribute('crossorigin');
+      }
+    } catch {
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(originalSrc)}`;
+        const res = await fetch(proxyUrl);
+        const blob = await res.blob();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        if (base64Data) {
+          img.src = base64Data;
+          img.removeAttribute('crossorigin');
+        }
+      } catch {
+        img.crossOrigin = 'anonymous';
+      }
     }
-    breakPoints.push(totalHeight);
-    return breakPoints;
+  });
+
+  await Promise.race([
+    Promise.all(imagePromises),
+    new Promise((resolve) => setTimeout(resolve, 4000)),
+  ]);
+}
+
+/**
+ * Paged DOM Layout Engine:
+ * Partitions the rendered document into discrete, pixel-exact A4 page containers before rendering.
+ *
+ * Guarantees:
+ * 1. Zero horizontal slicing through text lines or diagrams.
+ * 2. Zero orphan headings (headings automatically carry over to the new page with their following block).
+ * 3. Atomic diagrams are auto-constrained to fit A4 printable height.
+ * 4. Code blocks and tables split cleanly at line/row boundaries when space allows, eliminating white gaps.
+ * 5. Full 4-sided margins applied identically to every single page.
+ */
+function layoutContentIntoA4Pages(
+  sandboxDoc: Document,
+  sourceContentEl: HTMLElement,
+  theme: any,
+  margins: PdfMargins,
+  smartPageBreaks: boolean = true
+): HTMLElement[] {
+  const padTop = Math.max(0, Math.round((margins.top ?? 15) * MM_TO_PX));
+  const padRight = Math.max(0, Math.round((margins.right ?? 15) * MM_TO_PX));
+  const padBottom = Math.max(0, Math.round((margins.bottom ?? 15) * MM_TO_PX));
+  const padLeft = Math.max(0, Math.round((margins.left ?? 15) * MM_TO_PX));
+
+  const printableHeightPx = Math.max(200, A4_HEIGHT_PX - padTop - padBottom);
+
+  // Auto-constrain any Mermaid diagram SVGs so they never exceed printable page height
+  const mermaidBlocks = Array.from(sourceContentEl.querySelectorAll<HTMLElement>('.mermaid'));
+  for (const m of mermaidBlocks) {
+    const svg = m.querySelector('svg');
+    if (svg) {
+      const maxSvgHeight = printableHeightPx - 30;
+      svg.style.maxHeight = `${maxSvgHeight}px`;
+      svg.style.maxWidth = '100%';
+      svg.style.height = 'auto';
+      svg.style.width = 'auto';
+    }
   }
 
-  const targets = Array.from(
-    container.querySelectorAll(
-      'h1, h2, h3, h4, h5, h6, pre, table, tr, blockquote, .mermaid, p, img'
-    )
-  ) as HTMLElement[];
+  // Create pages root container
+  const pagesContainer = sandboxDoc.createElement('div');
+  pagesContainer.id = 'paged-render-root';
+  pagesContainer.style.width = `${A4_WIDTH_PX}px`;
+  pagesContainer.style.position = 'relative';
+  sandboxDoc.body.appendChild(pagesContainer);
 
-  let currentY = 0;
-  // Maximum allowed bottom whitespace gap (in DOM px) - strictly capped to ~35px
-  // to ensure pages are 97-99% full with zero giant blank voids.
-  const MAX_MICRO_GAP_PX = 38;
+  const pages: HTMLElement[] = [];
 
-  while (currentY + pageHeightPx < totalHeight) {
-    const idealY = currentY + pageHeightPx;
-    const minCutY = idealY - MAX_MICRO_GAP_PX;
-    let bestCutY = idealY;
-    let foundCut = false;
+  function createA4Page(): { pageEl: HTMLElement; contentEl: HTMLElement } {
+    const pageIndex = pages.length + 1;
+    const pageEl = sandboxDoc.createElement('div');
+    pageEl.className = 'pdf-dom-a4-page';
+    pageEl.setAttribute('data-page-index', String(pageIndex));
+    pageEl.style.width = `${A4_WIDTH_PX}px`;
+    pageEl.style.height = `${A4_HEIGHT_PX}px`;
+    pageEl.style.minHeight = `${A4_HEIGHT_PX}px`;
+    pageEl.style.maxHeight = `${A4_HEIGHT_PX}px`;
+    pageEl.style.boxSizing = 'border-box';
+    pageEl.style.padding = `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`;
+    pageEl.style.position = 'relative';
+    pageEl.style.backgroundColor = theme.colors.background || '#ffffff';
+    pageEl.style.color = theme.colors.text || '#1f2937';
+    pageEl.style.overflow = 'hidden';
+    pageEl.style.margin = '0 0 20px 0';
 
-    // 1. Check for headings near the page bottom (would be orphaned if cut after it)
-    for (const el of targets) {
-      const tagName = el.tagName.toLowerCase();
-      if (/^h[1-6]$/.test(tagName)) {
-        const top = el.getBoundingClientRect().top - containerRect.top;
-        if (top >= idealY - 75 && top < idealY && top > currentY + 150) {
-          bestCutY = top;
-          foundCut = true;
-          break;
-        }
-      }
+    const pageContentEl = sandboxDoc.createElement('div');
+    pageContentEl.className = 'pdf-dom-a4-content';
+    pageContentEl.style.width = '100%';
+    pageContentEl.style.height = `${printableHeightPx}px`;
+    pageContentEl.style.maxHeight = `${printableHeightPx}px`;
+    pageContentEl.style.boxSizing = 'border-box';
+    pageContentEl.style.overflow = 'hidden';
+
+    pageEl.appendChild(pageContentEl);
+    pagesContainer.appendChild(pageEl);
+    pages.push(pageEl);
+
+    return { pageEl, contentEl: pageContentEl };
+  }
+
+  // Collect top-level child elements
+  const rawNodes = Array.from(sourceContentEl.childNodes);
+  const elements: HTMLElement[] = [];
+
+  for (const node of rawNodes) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      elements.push(node as HTMLElement);
+    } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+      const p = sandboxDoc.createElement('p');
+      p.textContent = node.textContent;
+      elements.push(p);
+    }
+  }
+
+  const queue: HTMLElement[] = [...elements];
+  let cur = createA4Page();
+
+  while (queue.length > 0) {
+    const item = queue.shift()!;
+
+    // Test append
+    cur.contentEl.appendChild(item);
+
+    // Check overflow (+2px tolerance for sub-pixel layout rounding)
+    const overflows = cur.contentEl.scrollHeight > printableHeightPx + 2;
+
+    if (!overflows) {
+      continue;
     }
 
-    // 2. Check for Mermaid diagrams starting near the bottom
-    if (!foundCut) {
-      for (const el of targets) {
-        if (el.classList.contains('mermaid')) {
-          const top = el.getBoundingClientRect().top - containerRect.top;
-          if (top >= idealY - 70 && top < idealY && top > currentY + 150) {
-            bestCutY = top;
-            foundCut = true;
-            break;
-          }
-        }
-      }
+    // Overflow occurred: remove item from current page
+    cur.contentEl.removeChild(item);
+
+    // If current page is empty, we must keep the item to avoid infinite loops
+    if (cur.contentEl.children.length === 0) {
+      cur.contentEl.appendChild(item);
+      cur = createA4Page();
+      continue;
     }
 
-    // 3. Line-aware cut inside <pre> code blocks (cut cleanly between code lines)
-    if (!foundCut) {
-      for (const el of targets) {
-        if (el.tagName.toLowerCase() === 'pre') {
-          const rect = el.getBoundingClientRect();
-          const preTop = rect.top - containerRect.top;
-          const preBottom = preTop + el.offsetHeight;
+    const currentHeight = cur.contentEl.scrollHeight;
+    const remainingPx = printableHeightPx - currentHeight;
 
-          if (preTop < idealY && preBottom > idealY) {
-            const computed = window.getComputedStyle(el);
-            const rawLineHeight = parseFloat(computed.lineHeight);
-            const fontSize = parseFloat(computed.fontSize) || 13;
-            const lineHeight = !isNaN(rawLineHeight) && rawLineHeight > 0 ? rawLineHeight : fontSize * 1.5;
-            const padTop = parseFloat(computed.paddingTop) || 14;
+    // 1. Orphan Heading Prevention:
+    // If the last child on cur page is a heading, move it together with this item to the new page!
+    const lastChild = cur.contentEl.lastElementChild as HTMLElement | null;
+    if (lastChild && isHeadingElement(lastChild)) {
+      cur.contentEl.removeChild(lastChild);
+      queue.unshift(item);
+      queue.unshift(lastChild);
+      cur = createA4Page();
+      continue;
+    }
 
-            const linesCount = Math.floor((idealY - (preTop + padTop)) / lineHeight);
-            if (linesCount > 0) {
-              const safeLineCut = preTop + padTop + linesCount * lineHeight;
-              if (safeLineCut >= minCutY && safeLineCut > currentY + 100) {
-                bestCutY = safeLineCut;
-                foundCut = true;
-                break;
-              }
+    // 2. Smart Splitting (Code blocks, Tables, Lists):
+    if (smartPageBreaks) {
+      // A. Code Blocks (<pre>): split cleanly between lines (\n)
+      if (item.tagName.toLowerCase() === 'pre') {
+        const codeEl = item.querySelector('code') || item;
+        const rawCode = codeEl.textContent || '';
+        const lines = rawCode.split('\n');
+
+        if (lines.length > 3 && remainingPx >= 65) {
+          let bestLines = 0;
+          for (let count = lines.length - 1; count >= 2; count--) {
+            const testPre = item.cloneNode(true) as HTMLElement;
+            const testCode = testPre.querySelector('code') || testPre;
+            testCode.textContent = lines.slice(0, count).join('\n');
+            cur.contentEl.appendChild(testPre);
+            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
+            cur.contentEl.removeChild(testPre);
+
+            if (fits) {
+              bestLines = count;
+              break;
             }
           }
-        }
-      }
-    }
 
-    // 4. Row-aware cut inside <table> elements (cut cleanly between <tr> rows)
-    if (!foundCut) {
-      for (const el of targets) {
-        if (el.tagName.toLowerCase() === 'tr') {
-          const rect = el.getBoundingClientRect();
-          const trBottom = rect.bottom - containerRect.top;
-          if (trBottom >= minCutY && trBottom <= idealY && trBottom > currentY + 100) {
-            bestCutY = trBottom;
-            foundCut = true;
-            break;
+          if (bestLines >= 2 && lines.length - bestLines >= 1) {
+            const part1 = item.cloneNode(true) as HTMLElement;
+            const code1 = part1.querySelector('code') || part1;
+            code1.textContent = lines.slice(0, bestLines).join('\n');
+            cur.contentEl.appendChild(part1);
+
+            const part2 = item.cloneNode(true) as HTMLElement;
+            const code2 = part2.querySelector('code') || part2;
+            code2.textContent = lines.slice(bestLines).join('\n');
+
+            queue.unshift(part2);
+            cur = createA4Page();
+            continue;
           }
         }
       }
-    }
 
-    // 5. Line-aware cut inside paragraphs <p> (cut cleanly between text lines)
-    if (!foundCut) {
-      for (const el of targets) {
-        if (el.tagName.toLowerCase() === 'p') {
-          const rect = el.getBoundingClientRect();
-          const pTop = rect.top - containerRect.top;
-          const pBottom = pTop + el.offsetHeight;
+      // B. Tables (<table>): split cleanly between <tr> rows with cloned <thead>
+      if (item.tagName.toLowerCase() === 'table') {
+        const tbody = item.querySelector('tbody') || item;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
 
-          if (pTop < idealY && pBottom > idealY) {
-            const computed = window.getComputedStyle(el);
-            const rawLineHeight = parseFloat(computed.lineHeight);
-            const fontSize = parseFloat(computed.fontSize) || 14;
-            const lineHeight = !isNaN(rawLineHeight) && rawLineHeight > 0 ? rawLineHeight : fontSize * 1.5;
+        if (rows.length > 2 && remainingPx >= 65) {
+          let bestRows = 0;
+          for (let count = rows.length - 1; count >= 1; count--) {
+            const testTable = item.cloneNode(true) as HTMLElement;
+            const testTbody = testTable.querySelector('tbody') || testTable;
+            testTbody.innerHTML = '';
+            for (let r = 0; r < count; r++) {
+              testTbody.appendChild(rows[r].cloneNode(true));
+            }
+            cur.contentEl.appendChild(testTable);
+            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
+            cur.contentEl.removeChild(testTable);
 
-            const linesCount = Math.floor((idealY - pTop) / lineHeight);
-            if (linesCount > 0) {
-              const safeTextCut = pTop + linesCount * lineHeight;
-              if (safeTextCut >= minCutY && safeTextCut > currentY + 100) {
-                bestCutY = safeTextCut;
-                foundCut = true;
-                break;
-              }
+            if (fits) {
+              bestRows = count;
+              break;
             }
           }
+
+          if (bestRows >= 1 && rows.length - bestRows >= 1) {
+            const table1 = item.cloneNode(true) as HTMLElement;
+            const tbody1 = table1.querySelector('tbody') || table1;
+            tbody1.innerHTML = '';
+            for (let r = 0; r < bestRows; r++) {
+              tbody1.appendChild(rows[r].cloneNode(true));
+            }
+            cur.contentEl.appendChild(table1);
+
+            const table2 = item.cloneNode(true) as HTMLElement;
+            const tbody2 = table2.querySelector('tbody') || table2;
+            tbody2.innerHTML = '';
+            for (let r = bestRows; r < rows.length; r++) {
+              tbody2.appendChild(rows[r].cloneNode(true));
+            }
+
+            queue.unshift(table2);
+            cur = createA4Page();
+            continue;
+          }
+        }
+      }
+
+      // C. Lists (<ul>, <ol>): split cleanly between <li> items
+      if (item.tagName.toLowerCase() === 'ul' || item.tagName.toLowerCase() === 'ol') {
+        const lis = Array.from(item.querySelectorAll(':scope > li'));
+        if (lis.length > 2 && remainingPx >= 50) {
+          let bestLis = 0;
+          for (let count = lis.length - 1; count >= 1; count--) {
+            const testList = item.cloneNode(false) as HTMLElement;
+            for (let l = 0; l < count; l++) {
+              testList.appendChild(lis[l].cloneNode(true));
+            }
+            cur.contentEl.appendChild(testList);
+            const fits = cur.contentEl.scrollHeight <= printableHeightPx;
+            cur.contentEl.removeChild(testList);
+
+            if (fits) {
+              bestLis = count;
+              break;
+            }
+          }
+
+          if (bestLis >= 1 && lis.length - bestLis >= 1) {
+            const list1 = item.cloneNode(false) as HTMLElement;
+            for (let l = 0; l < bestLis; l++) {
+              list1.appendChild(lis[l].cloneNode(true));
+            }
+            cur.contentEl.appendChild(list1);
+
+            const list2 = item.cloneNode(false) as HTMLElement;
+            if (item.tagName.toLowerCase() === 'ol') {
+              list2.setAttribute('start', String(bestLis + 1));
+            }
+            for (let l = bestLis; l < lis.length; l++) {
+              list2.appendChild(lis[l].cloneNode(true));
+            }
+
+            queue.unshift(list2);
+            cur = createA4Page();
+            continue;
+          }
         }
       }
     }
 
-    // 6. Element boundary fallback in [idealY - 38, idealY]
-    if (!foundCut) {
-      for (const el of targets) {
-        const bottom = el.getBoundingClientRect().bottom - containerRect.top;
-        if (bottom >= minCutY && bottom <= idealY && bottom > currentY + 100) {
-          bestCutY = bottom;
-          foundCut = true;
-          break;
-        }
-      }
-    }
-
-    // Safety fallback: guaranteed forward progress
-    if (bestCutY <= currentY + (pageHeightPx - MAX_MICRO_GAP_PX)) {
-      bestCutY = idealY;
-    }
-
-    breakPoints.push(bestCutY);
-    currentY = bestCutY;
+    // Default fallback: move full item to new page
+    queue.unshift(item);
+    cur = createA4Page();
   }
 
-  breakPoints.push(totalHeight);
-  return breakPoints;
+  // Remove empty trailing page if any
+  if (cur.contentEl.children.length === 0 && pages.length > 1) {
+    pagesContainer.removeChild(cur.pageEl);
+    pages.pop();
+  }
+
+  return pages;
 }
 
 /**
- * Calculates adaptive rendering scale based on container height in pixels.
- * Uses 2.5x (240 DPI print quality) for short/medium documents and 2.0x (Retina 192 DPI)
- * for long documents. Never drops below 2.0x to guarantee crisp, sharp fonts.
+ * Renders each discrete A4 page element to the PDF document using high-res lossless rendering.
  */
-function getAdaptiveScale(elementHeightPx: number): number {
-  if (elementHeightPx <= 10000) {
-    return 2.5; // Ultra-crisp 240 DPI
-  }
-  return 2.0; // Retina 192 DPI (lossless and sharp)
-}
-
-/**
- * Slices a master canvas into discrete A4 page canvases and appends them to jsPDF.
- * Uses lossless PNG compression and high-quality smoothing to ensure razor-sharp text and diagrams.
- */
-function addCanvasToPdfInPageSlices(
+async function renderPagesToPdf(
   pdf: jsPDF,
-  canvas: HTMLCanvasElement,
-  themeBgColor: string,
-  imgWidthMm: number = 210,
-  pageHeightMm: number = 297,
-  isFirstChunk: boolean = true,
-  customBreaks?: number[]
-): void {
-  const a4Ratio = pageHeightMm / imgWidthMm;
-  const standardPageHeightPx = Math.floor(canvas.width * a4Ratio);
-
-  const sliceCanvas = document.createElement('canvas');
-  sliceCanvas.width = canvas.width;
-  const sliceCtx = sliceCanvas.getContext('2d');
-
-  if (sliceCtx) {
-    sliceCtx.imageSmoothingEnabled = true;
-    sliceCtx.imageSmoothingQuality = 'high';
-  }
-
-  if (customBreaks && customBreaks.length > 1) {
-    for (let i = 0; i < customBreaks.length - 1; i++) {
-      const startY = customBreaks[i];
-      const endY = customBreaks[i + 1];
-      const sliceHeight = Math.max(1, endY - startY);
-
-      sliceCanvas.height = sliceHeight;
-      if (sliceCtx) {
-        sliceCtx.fillStyle = themeBgColor || '#ffffff';
-        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        sliceCtx.drawImage(
-          canvas,
-          0, startY, canvas.width, sliceHeight,
-          0, 0, canvas.width, sliceHeight
-        );
-
-        // LOSSLESS PNG: eliminates JPEG compression artifacts, fuzzy text, and muddy lines
-        const sliceData = sliceCanvas.toDataURL('image/png');
-        const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
-
-        if (!isFirstChunk || i > 0) {
-          pdf.addPage();
-        }
-
-        pdf.addImage(sliceData, 'PNG', 0, 0, imgWidthMm, sliceHeightMm, undefined, 'FAST');
-      }
-    }
-  } else {
-    let currentY = 0;
-    let pageCount = 0;
-
-    while (currentY < canvas.height) {
-      const sliceHeight = Math.min(standardPageHeightPx, canvas.height - currentY);
-      sliceCanvas.height = sliceHeight;
-
-      if (sliceCtx) {
-        sliceCtx.fillStyle = themeBgColor || '#ffffff';
-        sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        sliceCtx.drawImage(
-          canvas,
-          0, currentY, canvas.width, sliceHeight,
-          0, 0, canvas.width, sliceHeight
-        );
-
-        // LOSSLESS PNG: eliminates JPEG compression artifacts, fuzzy text, and muddy lines
-        const sliceData = sliceCanvas.toDataURL('image/png');
-        const sliceHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
-
-        if (!isFirstChunk || pageCount > 0) {
-          pdf.addPage();
-        }
-
-        pdf.addImage(sliceData, 'PNG', 0, 0, imgWidthMm, sliceHeightMm, undefined, 'FAST');
-      }
-
-      currentY += sliceHeight;
-      pageCount++;
-    }
-  }
-
-  // Cleanup offscreen slice canvas
-  sliceCanvas.width = 0;
-  sliceCanvas.height = 0;
-}
-
-/**
- * Renders an element to jsPDF in either a single pass or sequential chunks
- * if the content is exceptionally tall, preventing browser canvas dimension overflow.
- */
-async function renderElementToPdf(
-  pdf: jsPDF,
-  wrapperElement: HTMLElement,
-  containerContentEl: HTMLElement,
-  themeBgColor: string,
-  scale: number,
-  smartPageBreaks: boolean = true
+  pages: HTMLElement[],
+  themeBgColor: string
 ): Promise<void> {
-  const CHUNK_HEIGHT_LIMIT = 18000;
-  const totalHeight = wrapperElement.scrollHeight;
-  const children = Array.from(containerContentEl.children) as HTMLElement[];
+  for (let i = 0; i < pages.length; i++) {
+    if (i > 0) {
+      pdf.addPage('a4', 'portrait');
+    }
 
-  const a4Ratio = 297 / 210;
-  const pageHeightInDomPx = Math.floor(794 * a4Ratio);
-
-  if (totalHeight <= CHUNK_HEIGHT_LIMIT || children.length <= 1) {
-    const domBreaks = calculateSmartPageBreaks(wrapperElement, pageHeightInDomPx, smartPageBreaks);
-    const canvasBreaks = domBreaks.map((b) => Math.round(b * scale));
-
+    const page = pages[i];
     const canvas = await withTimeout(
-      html2canvas(wrapperElement, {
-        scale,
+      html2canvas(page, {
+        scale: 2.0, // Razor sharp Retina 192 DPI
         useCORS: true,
         allowTaint: true,
         logging: false,
-        windowWidth: 794,
-        width: 794,
-        backgroundColor: themeBgColor,
+        backgroundColor: themeBgColor || '#ffffff',
+        width: A4_WIDTH_PX,
+        height: A4_HEIGHT_PX,
       }),
       PDF_EXPORT_TIMEOUT_MS
     );
 
     assertCanvasWithinLimits(canvas);
-    addCanvasToPdfInPageSlices(pdf, canvas, themeBgColor, 210, 297, true, canvasBreaks);
+
+    const imgData = canvas.toDataURL('image/png');
+    pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+
+    // Free canvas memory immediately
     canvas.width = 0;
     canvas.height = 0;
-    return;
   }
-
-  // Multi-chunk rendering for large documents: group children into chunks
-  const chunks: HTMLElement[][] = [];
-  let currentGroup: HTMLElement[] = [];
-  let accumulatedHeight = 0;
-
-  for (const child of children) {
-    const h = Math.max(child.offsetHeight, 40);
-    if (accumulatedHeight + h > CHUNK_HEIGHT_LIMIT && currentGroup.length > 0) {
-      chunks.push(currentGroup);
-      currentGroup = [child];
-      accumulatedHeight = h;
-    } else {
-      currentGroup.push(child);
-      accumulatedHeight += h;
-    }
-  }
-  if (currentGroup.length > 0) {
-    chunks.push(currentGroup);
-  }
-
-  for (let i = 0; i < chunks.length; i++) {
-    const activeChunk = chunks[i];
-
-    // Hide children that are not in this chunk
-    children.forEach((c) => {
-      c.style.display = activeChunk.includes(c) ? '' : 'none';
-    });
-
-    await new Promise((r) => setTimeout(r, 80));
-
-    const domBreaks = calculateSmartPageBreaks(wrapperElement, pageHeightInDomPx, smartPageBreaks);
-    const canvasBreaks = domBreaks.map((b) => Math.round(b * scale));
-
-    const chunkCanvas = await withTimeout(
-      html2canvas(wrapperElement, {
-        scale,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        windowWidth: 794,
-        width: 794,
-        backgroundColor: themeBgColor,
-      }),
-      PDF_EXPORT_TIMEOUT_MS
-    );
-
-    assertCanvasWithinLimits(chunkCanvas);
-    addCanvasToPdfInPageSlices(pdf, chunkCanvas, themeBgColor, 210, 297, i === 0, canvasBreaks);
-
-    chunkCanvas.width = 0;
-    chunkCanvas.height = 0;
-  }
-
-  // Restore visibility
-  children.forEach((c) => {
-    c.style.display = '';
-  });
 }
 
 function mapRenderError(error: unknown): never {
@@ -463,7 +465,6 @@ const defaultOptions: PDFOptions = {
 
 /**
  * Generate PDF from markdown content
- * Uses html2canvas + jsPDF with Prism.js syntax highlighting to match preview
  */
 export const generatePDFFromMarkdown = async (
   markdown: string,
@@ -482,156 +483,93 @@ export const generatePDFFromMarkdown = async (
   const theme = getTheme(opts.themeId || 'professional');
   const htmlContent = parseMarkdown(markdown);
   const themedHtml = applyThemeToHTML(htmlContent, theme);
-  
-  // Create a temporary container matching preview pane styles
-  const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.left = '-9999px';
-  container.style.top = '0';
-  container.style.width = '794px'; // A4 width in pixels at 96 DPI
-  container.style.padding = `${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
-  container.style.backgroundColor = theme.colors.background;
-  container.style.color = theme.colors.text;
-  container.style.fontFamily = theme.fonts.body;
-  container.style.fontSize = theme.fontSize.base;
-  container.style.lineHeight = theme.spacing.lineHeight;
-  container.style.overflow = 'visible';
-  container.className = 'pdf-export-container';
-  container.innerHTML = themedHtml;
-  
-  // Add Prism Tomorrow theme styles to match preview exactly
-  const prismStyles = document.createElement('style');
-  prismStyles.textContent = `
-    /* Prism Tomorrow Theme - matching preview */
-    .pdf-export-container pre[class*="language-"] {
-      background: #2d2d30;
-      border-radius: 6px;
-      padding: 16px;
-      margin: 16px 0;
-      overflow-x: auto;
-      color: #ccc;
-      text-shadow: none;
-      font-family: 'Courier New', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-      font-size: ${theme.fontSize.code};
-      line-height: 1.5;
-      direction: ltr;
-      text-align: left;
-      white-space: pre;
-      word-spacing: normal;
-      word-break: normal;
-      word-wrap: normal;
-      tab-size: 4;
-      hyphens: none;
-    }
-    
-    .pdf-export-container code[class*="language-"] {
-      background: transparent;
-      color: #ccc;
-      text-shadow: none;
-      font-family: 'Courier New', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-      font-size: ${theme.fontSize.code};
-      line-height: 1.5;
-    }
-    
-    .pdf-export-container :not(pre) > code {
-      background: ${theme.colors.codeBackground};
-      color: ${theme.colors.codeText};
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: 'Courier New', Consolas, Monaco, monospace;
-      font-size: ${theme.fontSize.code};
-    }
-    
-    /* Prism Token Colors - Tomorrow Theme */
-    .pdf-export-container .token.comment,
-    .pdf-export-container .token.block-comment,
-    .pdf-export-container .token.prolog,
-    .pdf-export-container .token.doctype,
-    .pdf-export-container .token.cdata {
-      color: #999;
-    }
-    
-    .pdf-export-container .token.punctuation {
-      color: #ccc;
-    }
-    
-    .pdf-export-container .token.tag,
-    .pdf-export-container .token.attr-name,
-    .pdf-export-container .token.namespace,
-    .pdf-export-container .token.deleted {
-      color: #e2777a;
-    }
-    
-    .pdf-export-container .token.function-name {
-      color: #6196cc;
-    }
-    
-    .pdf-export-container .token.boolean,
-    .pdf-export-container .token.number,
-    .pdf-export-container .token.function {
-      color: #f08d49;
-    }
-    
-    .pdf-export-container .token.property,
-    .pdf-export-container .token.class-name,
-    .pdf-export-container .token.constant,
-    .pdf-export-container .token.symbol {
-      color: #f8c555;
-    }
-    
-    .pdf-export-container .token.selector,
-    .pdf-export-container .token.important,
-    .pdf-export-container .token.atrule,
-    .pdf-export-container .token.keyword,
-    .pdf-export-container .token.builtin {
-      color: #cc99cd;
-    }
-    
-    .pdf-export-container .token.string,
-    .pdf-export-container .token.char,
-    .pdf-export-container .token.attr-value,
-    .pdf-export-container .token.regex,
-    .pdf-export-container .token.variable {
-      color: #7ec699;
-    }
-    
-    .pdf-export-container .token.operator,
-    .pdf-export-container .token.entity,
-    .pdf-export-container .token.url {
-      color: #67cdcc;
-    }
-    
-    .pdf-export-container .token.important,
-    .pdf-export-container .token.bold {
-      font-weight: bold;
-    }
-    
-    .pdf-export-container .token.italic {
-      font-style: italic;
-    }
-    
-    .pdf-export-container .token.entity {
-      cursor: help;
-    }
-    
-    .pdf-export-container .token.inserted {
-      color: green;
-    }
-  `;
-  
-  document.head.appendChild(prismStyles);
-  document.body.appendChild(container);
+
+  const sandboxFrame = document.createElement('iframe');
+  sandboxFrame.style.position = 'fixed';
+  sandboxFrame.style.left = '-9999px';
+  sandboxFrame.style.top = '0';
+  sandboxFrame.style.width = `${A4_WIDTH_PX}px`;
+  sandboxFrame.style.height = `${A4_HEIGHT_PX}px`;
+  sandboxFrame.style.border = 'none';
+  document.body.appendChild(sandboxFrame);
 
   try {
-    await renderMermaidInDocument(document);
-    await waitForMermaidPaint(500);
+    const sandboxDoc = sandboxFrame.contentDocument;
+    if (!sandboxDoc) {
+      throw new PdfExportError('RENDER_FAILED', 'Could not access PDF render frame.');
+    }
 
-    Prism.highlightAllUnder(container);
+    sandboxDoc.open();
+    sandboxDoc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: ${theme.fonts.body};
+            color: ${theme.colors.text};
+            background-color: ${theme.colors.background};
+          }
+          ul, ol { padding-left: 30px; margin: 10px 0; }
+          li { margin: 5px 0; }
+          p { margin: ${theme.spacing.paragraphMargin} 0; line-height: ${theme.spacing.lineHeight}; }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
+          th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
+          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
+          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; }
+          code { font-family: ${theme.fonts.code}; }
+          a { color: ${theme.colors.links}; text-decoration: none; }
+          h1, h2, h3, h4, h5, h6 {
+            font-weight: bold;
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            line-height: 1.25;
+          }
+          .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
+          .mermaid svg { max-width: 100%; height: auto; }
+          ${MERMAID_DIAGRAM_STYLES}
+        </style>
+      </head>
+      <body>
+        <div id="pdf-content">
+          ${themedHtml}
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/prism.min.js"></script>
+      </body>
+      </html>
+    `);
+    sandboxDoc.close();
+
+    await renderMermaidInDocument(sandboxDoc);
+    await waitForMermaidPaint(600);
+
+    const prism = (sandboxDoc.defaultView as any)?.Prism || Prism;
+    if (prism) {
+      prism.highlightAllUnder(sandboxDoc.body);
+    }
 
     await new Promise((resolve) => setTimeout(resolve, 300));
+    await processSandboxImages(sandboxDoc);
 
-    const totalHeight = container.scrollHeight;
-    const scale = getAdaptiveScale(totalHeight);
+    const contentEl = sandboxDoc.getElementById('pdf-content');
+    if (!contentEl) {
+      throw new PdfExportError('RENDER_FAILED', 'Content element not found.');
+    }
+
+    const pages = layoutContentIntoA4Pages(
+      sandboxDoc,
+      contentEl,
+      theme,
+      margins,
+      opts.smartPageBreaks ?? true
+    );
+
+    contentEl.style.display = 'none';
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -640,27 +578,20 @@ export const generatePDFFromMarkdown = async (
       compress: true,
     });
 
-    await renderElementToPdf(
-      pdf,
-      container,
-      container,
-      theme.colors.background,
-      scale,
-      opts.smartPageBreaks ?? true
-    );
+    await renderPagesToPdf(pdf, pages, theme.colors.background);
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
     mapRenderError(error);
   } finally {
-    // Clean up
-    document.body.removeChild(container);
-    document.head.removeChild(prismStyles);
+    if (document.body.contains(sandboxFrame)) {
+      document.body.removeChild(sandboxFrame);
+    }
   }
 };
 
 /**
- * Generate PDF from HTML element (the actual preview pane)
- * This captures the preview exactly as rendered with all styles
+ * Generate PDF from HTML element (the actual preview pane).
+ * Directly downloads the PDF file with pixel-perfect A4 pagination and margins.
  */
 export const generatePDFFromElement = async (
   element: HTMLElement,
@@ -670,189 +601,119 @@ export const generatePDFFromElement = async (
   const theme = getTheme(opts.themeId || 'professional');
   const margins = opts.margins || DEFAULT_PDF_MARGINS;
 
-  // Handle Iframe source (PreviewPane refactor)
   let sourceElement: HTMLElement = element;
   let iframeStyles: string = '';
 
   const iframe = element.querySelector('iframe');
   if (iframe && iframe.contentDocument) {
-      const iframeBody = iframe.contentDocument.body;
-      const previewContent = iframeBody.querySelector('#preview-content') as HTMLElement;
-      
-      if (previewContent) {
-          sourceElement = previewContent;
-      } else {
-          sourceElement = iframeBody; // Fallback
-      }
+    const previewContent = iframe.contentDocument.getElementById('preview-content');
+    sourceElement = previewContent || iframe.contentDocument.body;
 
-      // Extract styles from iframe head (including linked stylesheets)
-      const styleElements = iframe.contentDocument.head.querySelectorAll('style, link[rel="stylesheet"]');
-      
-      const stylePromises = Array.from(styleElements).map(async (style) => {
-          if (style.tagName.toLowerCase() === 'style') {
-              return style.innerHTML;
-          } else if (style.tagName.toLowerCase() === 'link' && (style as HTMLLinkElement).rel === 'stylesheet') {
-              try {
-                  const href = (style as HTMLLinkElement).href;
-                  // Skip internal/blob URLs if needed, but try fetching everything
-                  const response = await fetch(href);
-                  return await response.text();
-              } catch {
-                  return '';
-              }
-          }
+    const styleElements = iframe.contentDocument.head.querySelectorAll('style, link[rel="stylesheet"]');
+    const stylePromises = Array.from(styleElements).map(async (style) => {
+      if (style.tagName.toLowerCase() === 'style') {
+        return style.innerHTML;
+      } else if (style.tagName.toLowerCase() === 'link' && (style as HTMLLinkElement).rel === 'stylesheet') {
+        try {
+          const res = await fetch((style as HTMLLinkElement).href);
+          return await res.text();
+        } catch {
           return '';
-      });
-
-      const loadedStyles = await Promise.all(stylePromises);
-      iframeStyles = loadedStyles.join('\n');
+        }
+      }
+      return '';
+    });
+    const loadedStyles = await Promise.all(stylePromises);
+    iframeStyles = loadedStyles.join('\n');
   }
-  
-  // Create a sandbox iframe for PDF generation
+
   const sandboxFrame = document.createElement('iframe');
   sandboxFrame.style.position = 'fixed';
   sandboxFrame.style.left = '-9999px';
   sandboxFrame.style.top = '0';
-  sandboxFrame.style.width = '794px'; // A4 width
-  sandboxFrame.style.height = '1123px'; // A4 height
+  sandboxFrame.style.width = `${A4_WIDTH_PX}px`;
+  sandboxFrame.style.height = `${A4_HEIGHT_PX}px`;
   sandboxFrame.style.border = 'none';
   document.body.appendChild(sandboxFrame);
 
   try {
-      const sandboxDoc = sandboxFrame.contentDocument;
-      if (!sandboxDoc) {
-        throw new PdfExportError('RENDER_FAILED', 'Could not access PDF render frame.');
-      }
-
-      // Write content to sandbox
-      sandboxDoc.open();
-      sandboxDoc.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                * { box-sizing: border-box; }
-                
-                body {
-                    margin: 0;
-                    padding: 0;
-                    font-family: ${theme.fonts.body};
-                    color: ${theme.colors.text};
-                    background-color: ${theme.colors.background};
-                }
-                
-                /* List & Text Styles */
-                ul, ol { padding-left: 30px; margin: 10px 0; }
-                li { margin: 5px 0; }
-                p { margin: ${theme.spacing.paragraphMargin} 0; line-height: ${theme.spacing.lineHeight}; }
-                
-                /* Tables & Code */
-                table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
-                th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
-                th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
-                pre { margin: 12px 0 16px; padding: 12px; background-color: ${theme.colors.codeBackground}; border-radius: 6px; }
-                code { font-family: ${theme.fonts.code}; }
-                
-                /* Links */
-                a { color: ${theme.colors.links}; text-decoration: none; }
-
-                /* Headings - Default styles (can be overridden) */
-                h1, h2, h3, h4, h5, h6 {
-                    font-weight: bold;
-                    margin-top: ${theme.spacing.headingMargin};
-                    margin-bottom: ${theme.spacing.paragraphMargin};
-                    padding-bottom: 0;
-                    line-height: 1.2;
-                }
-                
-                /* Prevent page breaks (Critical - keep !important) */
-                h1, h2, h3, h4, h5, h6, pre, code, table, tr, blockquote, ul, ol {
-                    page-break-inside: avoid !important;
-                    break-inside: avoid !important;
-                }
-                
-                h1, h2, h3, h4, h5, h6 {
-                    page-break-after: avoid !important;
-                    break-after: avoid !important;
-                }
-
-                .mermaid { display: flex; justify-content: center; margin: 1rem 0; max-width: 100%; }
-                .mermaid svg { max-width: 100%; height: auto; }
-                ${MERMAID_DIAGRAM_STYLES}
-
-                /* User Custom Styles (Injected last to override defaults) */
-                ${iframeStyles}
-            </style>
-        </head>
-        <body>
-            <div id="print-wrapper" style="padding: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm; min-height: 100vh; box-sizing: border-box;">
-                <div id="pdf-content">
-                    ${sourceElement.innerHTML}
-                </div>
-            </div>
-        </body>
-        </html>
-      `);
-      sandboxDoc.close();
-
-      await renderMermaidInDocument(sandboxDoc);
-      await waitForMermaidPaint(600);
-
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      
-      const wrapper = sandboxDoc.body;
-
-    // Handle images: Convert to Base64 (Proxy Logic)
-    const images = wrapper.querySelectorAll('img');
-    const imagePromises = Array.from(images).map(async (img) => {
-        const originalSrc = img.src;
-        
-        try {
-            // Helper to fetch and convert to base64
-            const toBase64 = async (url: string): Promise<string> => {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-            };
-
-            let base64Data = '';
-            try {
-                base64Data = await toBase64(originalSrc);
-            } catch (e) {
-                // Try via allorigins proxy
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(originalSrc)}`;
-                base64Data = await toBase64(proxyUrl);
-            }
-
-            // Replace image source with Base64 data
-            if (base64Data) {
-                img.src = base64Data;
-                img.removeAttribute('crossorigin'); 
-            }
-        } catch {
-             img.crossOrigin = "anonymous";
-        }
-    });
-    
-    // Wait for all image processing
-    await Promise.race([
-        Promise.all(imagePromises),
-        new Promise(resolve => setTimeout(resolve, 5000))
-    ]);
-
-    const printWrapper = sandboxDoc.getElementById('print-wrapper');
-    if (!printWrapper) {
-      throw new PdfExportError('RENDER_FAILED', 'Print layout not found.');
+    const sandboxDoc = sandboxFrame.contentDocument;
+    if (!sandboxDoc) {
+      throw new PdfExportError('RENDER_FAILED', 'Could not access PDF render frame.');
     }
 
-    const totalHeight = printWrapper.scrollHeight;
-    const scale = getAdaptiveScale(totalHeight);
+    sandboxDoc.open();
+    sandboxDoc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: ${theme.fonts.body};
+            color: ${theme.colors.text};
+            background-color: ${theme.colors.background};
+          }
+          ul, ol { padding-left: 30px; margin: 10px 0; }
+          li { margin: 5px 0; }
+          p { margin: ${theme.spacing.paragraphMargin} 0; line-height: ${theme.spacing.lineHeight}; }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
+          th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
+          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
+          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; }
+          code { font-family: ${theme.fonts.code}; }
+          a { color: ${theme.colors.links}; text-decoration: none; }
+          h1, h2, h3, h4, h5, h6 {
+            font-weight: bold;
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            line-height: 1.25;
+          }
+          .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
+          .mermaid svg { max-width: 100%; height: auto; }
+          ${MERMAID_DIAGRAM_STYLES}
+          ${iframeStyles}
+        </style>
+      </head>
+      <body>
+        <div id="pdf-content">
+          ${sourceElement.innerHTML}
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/prism.min.js"></script>
+      </body>
+      </html>
+    `);
+    sandboxDoc.close();
+
+    await renderMermaidInDocument(sandboxDoc);
+    await waitForMermaidPaint(600);
+
+    const prism = (sandboxDoc.defaultView as any)?.Prism || Prism;
+    if (prism) {
+      prism.highlightAllUnder(sandboxDoc.body);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await processSandboxImages(sandboxDoc);
+
+    const contentEl = sandboxDoc.getElementById('pdf-content');
+    if (!contentEl) {
+      throw new PdfExportError('RENDER_FAILED', 'Content element not found.');
+    }
+
+    const pages = layoutContentIntoA4Pages(
+      sandboxDoc,
+      contentEl,
+      theme,
+      margins,
+      opts.smartPageBreaks ?? true
+    );
+
+    contentEl.style.display = 'none';
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -861,22 +722,13 @@ export const generatePDFFromElement = async (
       compress: true,
     });
 
-    const contentEl = sandboxDoc.getElementById('pdf-content') || printWrapper;
-    await renderElementToPdf(
-      pdf,
-      printWrapper,
-      contentEl,
-      theme.colors.background,
-      scale,
-      opts.smartPageBreaks ?? true
-    );
-
+    await renderPagesToPdf(pdf, pages, theme.colors.background);
     pdf.save(opts.filename || 'document.pdf');
   } catch (error) {
     mapRenderError(error);
   } finally {
     if (document.body.contains(sandboxFrame)) {
-        document.body.removeChild(sandboxFrame);
+      document.body.removeChild(sandboxFrame);
     }
   }
 };
@@ -924,8 +776,8 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
       }
       return '';
     });
-    const loaded = await Promise.all(stylePromises);
-    customStyles = loaded.join('\n');
+    const loadedStyles = await Promise.all(stylePromises);
+    customStyles = loadedStyles.join('\n');
   } else if (options.markdown) {
     printHtml = applyThemeToHTML(parseMarkdown(options.markdown), theme);
   }

@@ -46,6 +46,22 @@ function extractNodeCode(node: HTMLElement): string {
   return cleanMermaidCode(rawText);
 }
 
+function checkAndSanitizeErrorSvg(node: HTMLElement): boolean {
+  const svg = node.querySelector('svg');
+  if (!svg) return false;
+  const isError =
+    svg.getAttribute('aria-roledescription') === 'error' ||
+    (svg.id && svg.id.includes('error')) ||
+    Boolean(svg.querySelector('.error-icon')) ||
+    Boolean(svg.textContent && svg.textContent.includes('Syntax error in text'));
+  if (isError) {
+    node.innerHTML =
+      '<div style="margin:1rem 0;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-family:sans-serif;font-size:12px;">⚠️ <strong>Mermaid Diagram Syntax Error:</strong> Please verify diagram syntax.</div>';
+    return true;
+  }
+  return false;
+}
+
 /**
  * Render diagrams in any document using the bundled mermaid package (PDF / off-screen export).
  */
@@ -70,11 +86,12 @@ export async function renderMermaidInDocument(doc: Document): Promise<void> {
       const code = extractNodeCode(node);
       node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
+      checkAndSanitizeErrorSvg(node);
     } catch (error) {
       console.warn('Mermaid diagram render failed:', error);
       if (!node.querySelector('svg')) {
         node.innerHTML =
-          '<pre style="color:#b91c1c;font-size:12px;padding:8px;background:rgba(239,68,68,0.1);border-radius:4px;">Diagram syntax error - check syntax</pre>';
+          '<div style="margin:1rem 0;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-family:sans-serif;font-size:12px;">⚠️ <strong>Mermaid Diagram Syntax Error:</strong> Please verify diagram syntax.</div>';
       }
     }
   }
@@ -95,26 +112,51 @@ try {
   mermaid.initialize(${MERMAID_INIT});
 
   const decodeData = (el) => {
-    const raw = el.getAttribute('data-mermaid');
+    let raw = el.getAttribute('data-mermaid');
+    let code = '';
     if (raw) {
       try {
-        return decodeURIComponent(raw);
+        code = decodeURIComponent(raw);
       } catch (e) {}
     }
-    let t = el.textContent || el.innerText || '';
-    return t
+    if (!code) {
+      code = el.textContent || el.innerText || '';
+    }
+    return code
+      .replace(/\\r\\n/g, '\\n')
+      .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+      .replace(/[\\u00A0\\u202F]/g, ' ')
+      .replace(/[\\u201C\\u201D\\u201E\\u201F\\u00AB\\u00BB]/g, '"')
+      .replace(/[\\u2018\\u2019\\u201A\\u201B]/g, "'")
+      .replace(/[\\u2010-\\u2015\\u2212\\uFE58\\uFE63\\uFF0D]/g, '-')
+      .replace(/—>>/g, '->>')
+      .replace(/–>>/g, '->>')
+      .replace(/→/g, '->')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"');
+      .trim();
   };
 
   const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
   for (const node of nodes) {
     try {
-      const code = decodeData(node).trim();
+      const code = decodeData(node);
       node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
+      const svg = node.querySelector('svg');
+      if (svg && (
+        svg.getAttribute('aria-roledescription') === 'error' ||
+        (svg.id && svg.id.includes('error')) ||
+        Boolean(svg.querySelector('.error-icon')) ||
+        Boolean(svg.textContent && svg.textContent.includes('Syntax error in text'))
+      )) {
+        node.innerHTML = '<div style="margin:1rem 0;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#991b1b;font-family:sans-serif;font-size:12px;">⚠️ <strong>Mermaid Diagram Syntax Error:</strong> Please verify diagram syntax.</div>';
+      }
     } catch (e) {
       console.warn('[preview] Mermaid node render failed', e);
       if (!node.querySelector('svg')) {
@@ -138,24 +180,40 @@ try {
   mermaid.initialize(${MERMAID_INIT});
 
   const decodeData = (el) => {
-    const raw = el.getAttribute('data-mermaid');
+    let raw = el.getAttribute('data-mermaid');
+    let code = '';
     if (raw) {
       try {
-        return decodeURIComponent(raw);
+        code = decodeURIComponent(raw);
       } catch (e) {}
     }
-    let t = el.textContent || el.innerText || '';
-    return t
+    if (!code) {
+      code = el.textContent || el.innerText || '';
+    }
+    return code
+      .replace(/\\r\\n/g, '\\n')
+      .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+      .replace(/[\\u00A0\\u202F]/g, ' ')
+      .replace(/[\\u201C\\u201D\\u201E\\u201F\\u00AB\\u00BB]/g, '"')
+      .replace(/[\\u2018\\u2019\\u201A\\u201B]/g, "'")
+      .replace(/[\\u2010-\\u2015\\u2212\\uFE58\\uFE63\\uFF0D]/g, '-')
+      .replace(/—>>/g, '->>')
+      .replace(/–>>/g, '->>')
+      .replace(/→/g, '->')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"');
+      .trim();
   };
 
   const nodes = [...document.querySelectorAll('.mermaid')].filter((el) => !el.querySelector('svg'));
   for (const node of nodes) {
     try {
-      const code = decodeData(node).trim();
+      const code = decodeData(node);
       node.textContent = code;
       await mermaid.run({ nodes: [node], suppressErrors: true });
     } catch (e) {}

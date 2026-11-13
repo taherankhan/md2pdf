@@ -20,21 +20,27 @@ export const cleanMermaidCode = (code: string): string => {
     .replace(/[\u00A0\u202F]/g, ' ')
     // Normalize curly / typographical quotes to straight quotes
     .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    // Replace Unicode dashes, em-dashes, en-dashes, horizontal bars, minus signs with standard hyphen
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
 
   // Decode pre-existing HTML entities (e.g. if copied from rendered HTML or chat)
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     cleaned = cleaned
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
   }
 
-  // Normalize `subgraph Id["Title"]` -> `subgraph Id ["Title"]` for older Mermaid parsers
-  cleaned = cleaned.replace(/subgraph\s+([A-Za-z0-9_]+)\[/g, 'subgraph $1 [');
+  // Normalize common copy-pasted arrows
+  cleaned = cleaned
+    .replace(/—>>/g, '->>')
+    .replace(/–>>/g, '->>')
+    .replace(/→/g, '->');
 
   return cleaned.trim();
 };
