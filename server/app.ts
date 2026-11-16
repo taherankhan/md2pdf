@@ -143,14 +143,20 @@ apiRouter.post('/pdf/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'HTML content string is required for PDF generation.' });
     }
 
+    const rawTitle = (title && typeof title === 'string' && title.trim()) || 'Document';
     const pdfBuffer = await generatePdfBuffer({
       html,
-      title: title || 'document',
+      title: rawTitle,
       margins,
       smartPageBreaks,
     });
 
-    const safeFilename = (title || 'document').replace(/[^a-zA-Z0-9_\-\. ]/g, '_');
+    const safeFilename =
+      rawTitle
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .slice(0, 80) || 'document';
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);

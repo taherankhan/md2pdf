@@ -104,6 +104,12 @@ export async function generatePdfBuffer(options: GeneratePdfOptions): Promise<Bu
       // Continue even if a diagram had a syntax error
     });
 
+    // Ensure document.title matches the requested document title so Chromium sets /Title in PDF metadata
+    const docTitle = (options.title && options.title.trim()) || 'Document';
+    await page.evaluate((title) => {
+      document.title = title;
+    }, docTitle);
+
     // Wait for document fonts to settle
     await page.evaluate(async () => {
       if (document.fonts?.ready) {
@@ -119,6 +125,7 @@ export async function generatePdfBuffer(options: GeneratePdfOptions): Promise<Bu
     const pdfUint8Array = await page.pdf({
       format: 'A4',
       printBackground: true,
+      tagged: true,
       margin: {
         top: `${margins.top ?? 15}mm`,
         right: `${margins.right ?? 15}mm`,

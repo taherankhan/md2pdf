@@ -19,6 +19,7 @@ import {
     EXPORT_FORMAT_META,
     ExportFormat,
     resolveExportBasename,
+    resolveDocumentTitle,
 } from '../lib/exportDocument';
 import { PdfSettingsModal } from './PdfSettingsModal';
 
@@ -93,6 +94,7 @@ const ExportButton: FC<ExportButtonProps> = ({
         }
 
         const base = resolveExportBasename(exportBaseName, markdown);
+        const docTitle = resolveDocumentTitle(exportBaseName, markdown);
         const meta = EXPORT_FORMAT_META[format];
 
         try {
@@ -109,6 +111,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                 if (hasLivePreview && previewRoot) {
                     await generatePDFFromElement(previewRoot, {
                         filename: `${base}.pdf`,
+                        documentTitle: docTitle,
                         themeId: effectiveThemeId,
                         margins,
                         smartPageBreaks,
@@ -116,6 +119,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                 } else {
                     await generatePDFFromMarkdown(markdown, {
                         filename: `${base}.pdf`,
+                        documentTitle: docTitle,
                         themeId: effectiveThemeId,
                         margins,
                         smartPageBreaks,
@@ -127,7 +131,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                     element: previewRoot,
                     markdown,
                     themeId: effectiveThemeId,
-                    title: base,
+                    title: docTitle,
                     margins,
                 });
             } else if (format === 'markdown') {
@@ -204,6 +208,9 @@ const ExportButton: FC<ExportButtonProps> = ({
 
             {menuOpen && (
                 <div className="export-menu-dropdown" role="listbox" aria-label="Export format">
+                    <div className="export-menu-header">
+                        <span>Export Format</span>
+                    </div>
                     {(['pdf', 'print', 'markdown', 'html'] as const).map((format) => {
                         const meta = EXPORT_FORMAT_META[format];
                         const active = selectedFormat === format;
@@ -216,22 +223,20 @@ const ExportButton: FC<ExportButtonProps> = ({
                                 className={`export-menu-item ${active ? 'active' : ''}`}
                                 onClick={() => handlePickFormat(format)}
                             >
-                                <i className={`bi ${meta.icon}`} aria-hidden />
-                                <span>{meta.label}</span>
-                                {meta.badge && (
-                                    <span style={{
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        marginLeft: 'auto',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        background: format === 'print' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(129, 140, 248, 0.15)',
-                                        color: format === 'print' ? '#38bdf8' : '#818cf8',
-                                        border: `1px solid ${format === 'print' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(129, 140, 248, 0.3)'}`,
-                                    }}>
-                                        {meta.badge}
-                                    </span>
-                                )}
+                                <div className={`export-menu-item-icon-wrap icon-${format}`}>
+                                    <i className={`bi ${meta.icon}`} aria-hidden />
+                                </div>
+                                <div className="export-menu-item-text">
+                                    <div className="export-menu-item-title-row">
+                                        <span className="export-menu-item-title">{meta.label}</span>
+                                        {meta.badge && (
+                                            <span className={`export-menu-badge badge-${format}`}>
+                                                {meta.badge}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="export-menu-item-desc">{meta.desc}</span>
+                                </div>
                                 {active && (
                                     <i className="bi bi-check2 export-menu-item-check" aria-hidden />
                                 )}
@@ -247,8 +252,13 @@ const ExportButton: FC<ExportButtonProps> = ({
                             setSettingsOpen(true);
                         }}
                     >
-                        <i className="bi bi-sliders" aria-hidden />
-                        <span>PDF Margins & Settings...</span>
+                        <div className="export-menu-item-icon-wrap icon-settings">
+                            <i className="bi bi-sliders2-vertical" aria-hidden />
+                        </div>
+                        <div className="export-menu-item-text">
+                            <span className="export-menu-item-title">PDF Margins & Settings...</span>
+                            <span className="export-menu-item-desc">A4 margins, page breaks & live sheet preview</span>
+                        </div>
                     </button>
                 </div>
             )}
@@ -259,7 +269,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                 margins={margins}
                 smartPageBreaks={smartPageBreaks}
                 onSave={handleSaveSettings}
-                documentTitle={resolveExportBasename(exportBaseName, markdown)}
+                documentTitle={resolveDocumentTitle(exportBaseName, markdown)}
             />
         </div>
     );

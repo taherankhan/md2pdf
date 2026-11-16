@@ -162,6 +162,10 @@ async function generatePdfBuffer(options) {
       { timeout: 15e3 }
     ).catch(() => {
     });
+    const docTitle = options.title && options.title.trim() || "Document";
+    await page.evaluate((title) => {
+      document.title = title;
+    }, docTitle);
     await page.evaluate(async () => {
       if (document.fonts?.ready) {
         await document.fonts.ready;
@@ -172,6 +176,7 @@ async function generatePdfBuffer(options) {
     const pdfUint8Array = await page.pdf({
       format: "A4",
       printBackground: true,
+      tagged: true,
       margin: {
         top: `${margins.top ?? 15}mm`,
         right: `${margins.right ?? 15}mm`,
@@ -384,13 +389,14 @@ apiRouter.post("/pdf/generate", async (req, res) => {
     if (!html || typeof html !== "string") {
       return res.status(400).json({ error: "HTML content string is required for PDF generation." });
     }
+    const rawTitle = title && typeof title === "string" && title.trim() || "Document";
     const pdfBuffer = await generatePdfBuffer({
       html,
-      title: title || "document",
+      title: rawTitle,
       margins,
       smartPageBreaks
     });
-    const safeFilename = (title || "document").replace(/[^a-zA-Z0-9_\-\. ]/g, "_");
+    const safeFilename = rawTitle.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 80) || "document";
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}.pdf"`);
     res.setHeader("Content-Length", pdfBuffer.length);

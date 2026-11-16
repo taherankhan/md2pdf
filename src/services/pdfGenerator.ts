@@ -428,6 +428,7 @@ function mapRenderError(error: unknown): never {
 
 export interface PDFOptions {
   filename?: string;
+  documentTitle?: string;
   themeId?: string;
   margins?: PdfMargins;
   smartPageBreaks?: boolean;
@@ -447,10 +448,14 @@ const defaultOptions: PDFOptions = {
 async function downloadViaPuppeteerBackend(
   fullHtml: string,
   filename: string,
+  documentTitle: string,
   margins: PdfMargins,
   smartPageBreaks: boolean
 ): Promise<boolean> {
   try {
+    const cleanTitle = (documentTitle && documentTitle.trim()) || filename.replace(/\.pdf$/i, '');
+    const cleanFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+
     const response = await fetch('/api/pdf/generate', {
       method: 'POST',
       headers: {
@@ -458,7 +463,7 @@ async function downloadViaPuppeteerBackend(
       },
       body: JSON.stringify({
         html: fullHtml,
-        title: filename.replace(/\.pdf$/i, ''),
+        title: cleanTitle,
         margins,
         smartPageBreaks,
       }),
@@ -477,7 +482,7 @@ async function downloadViaPuppeteerBackend(
     const blobUrl = window.URL.createObjectURL(blob);
     const downloadLink = document.createElement('a');
     downloadLink.href = blobUrl;
-    downloadLink.download = filename;
+    downloadLink.download = cleanFilename;
     document.body.appendChild(downloadLink);
     downloadLink.click();
     document.body.removeChild(downloadLink);
@@ -498,6 +503,13 @@ export const generatePDFFromMarkdown = async (
 ): Promise<void> => {
   const opts = { ...defaultOptions, ...options };
   const margins = opts.margins || DEFAULT_PDF_MARGINS;
+  const docTitle =
+    (opts.documentTitle && opts.documentTitle.trim()) ||
+    (opts.filename ? opts.filename.replace(/\.pdf$/i, '') : 'Document');
+  const safeTitleTag = docTitle
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   if (markdown.length > PDF_MAX_MARKDOWN_CHARS) {
     throw new PdfExportError(
@@ -531,6 +543,7 @@ export const generatePDFFromMarkdown = async (
       <html>
       <head>
         <meta charset="utf-8">
+        <title>${safeTitleTag}</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
         <style>
           * { box-sizing: border-box; }
@@ -587,6 +600,7 @@ export const generatePDFFromMarkdown = async (
     const downloadedViaPuppeteer = await downloadViaPuppeteerBackend(
       fullHtml,
       opts.filename || 'document.pdf',
+      docTitle,
       margins,
       opts.smartPageBreaks ?? true
     );
@@ -616,6 +630,10 @@ export const generatePDFFromMarkdown = async (
       format: 'a4',
       compress: true,
     });
+    pdf.setProperties({
+      title: docTitle,
+      author: 'MD2PDFX',
+    });
 
     await renderPagesToPdf(pdf, pages, theme.colors.background);
     pdf.save(opts.filename || 'document.pdf');
@@ -639,6 +657,13 @@ export const generatePDFFromElement = async (
   const opts = { ...defaultOptions, ...options };
   const theme = getTheme(opts.themeId || 'professional');
   const margins = opts.margins || DEFAULT_PDF_MARGINS;
+  const docTitle =
+    (opts.documentTitle && opts.documentTitle.trim()) ||
+    (opts.filename ? opts.filename.replace(/\.pdf$/i, '') : 'Document');
+  const safeTitleTag = docTitle
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   let sourceElement: HTMLElement = element;
   let iframeStyles: string = '';
@@ -687,6 +712,7 @@ export const generatePDFFromElement = async (
       <html>
       <head>
         <meta charset="utf-8">
+        <title>${safeTitleTag}</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
         <style>
           * { box-sizing: border-box; }
@@ -744,6 +770,7 @@ export const generatePDFFromElement = async (
     const downloadedViaPuppeteer = await downloadViaPuppeteerBackend(
       fullHtml,
       opts.filename || 'document.pdf',
+      docTitle,
       margins,
       opts.smartPageBreaks ?? true
     );
@@ -772,6 +799,10 @@ export const generatePDFFromElement = async (
       unit: 'mm',
       format: 'a4',
       compress: true,
+    });
+    pdf.setProperties({
+      title: docTitle,
+      author: 'MD2PDFX',
     });
 
     await renderPagesToPdf(pdf, pages, theme.colors.background);

@@ -10,18 +10,39 @@ export type ExportFormat = 'pdf' | 'print' | 'markdown' | 'html';
 const sanitizeBasename = (s: string) =>
   s.trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 80) || 'document';
 
+/**
+ * Returns human-readable document title for PDF metadata and <title> tags.
+ */
+export function resolveDocumentTitle(
+  exportBaseName: string | undefined,
+  markdown: string
+): string {
+  if (
+    exportBaseName?.trim() &&
+    !/^untitled(\s+document)?$/i.test(exportBaseName.trim())
+  ) {
+    return exportBaseName.trim();
+  }
+  const firstHeading = markdown.match(/^#\s+(.+)$/m);
+  if (firstHeading && firstHeading[1]?.trim()) {
+    // Strip leading/trailing markdown bold/italic/code markup e.g. # **Title** or # _Title_ -> Title
+    const cleanHeading = firstHeading[1].trim().replace(/^[*_~`#\s]+|[*_~`#\s]+$/g, '');
+    if (cleanHeading) {
+      return cleanHeading;
+    }
+  }
+  if (exportBaseName?.trim()) {
+    return exportBaseName.trim();
+  }
+  return 'Document';
+}
+
 export function resolveExportBasename(
   exportBaseName: string | undefined,
   markdown: string
 ): string {
-  if (exportBaseName?.trim()) {
-    return sanitizeBasename(exportBaseName);
-  }
-  const firstHeading = markdown.match(/^#\s+(.+)$/m);
-  if (firstHeading) {
-    return sanitizeBasename(firstHeading[1]);
-  }
-  return 'document';
+  const title = resolveDocumentTitle(exportBaseName, markdown);
+  return sanitizeBasename(title);
 }
 
 export function downloadTextFile(content: string, filename: string, mime: string): void {
@@ -40,7 +61,7 @@ export function downloadTextFile(content: string, filename: string, mime: string
 export function buildThemedHtmlDocument(markdown: string, themeId: string): string {
   const theme = getTheme(themeId);
   const bodyHtml = applyThemeToHTML(parseMarkdown(markdown), theme);
-  const title = resolveExportBasename(undefined, markdown);
+  const title = resolveDocumentTitle(undefined, markdown);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -69,30 +90,34 @@ function escapeHtml(text: string): string {
 
 export const EXPORT_FORMAT_META: Record<
   ExportFormat,
-  { label: string; extension: string; mime: string; icon: string; badge?: string }
+  { label: string; desc: string; extension: string; mime: string; icon: string; badge?: string }
 > = {
-  print: {
-    label: 'Vector PDF (Crisp & Searchable)',
+  pdf: {
+    label: 'PDF Document',
+    desc: 'Vector PDF via Puppeteer engine',
     extension: 'pdf',
     mime: 'application/pdf',
-    icon: 'bi-printer',
+    icon: 'bi-file-earmark-pdf-fill',
     badge: 'Vector',
   },
-  pdf: {
-    label: 'Direct PDF (High-DPI Download)',
+  print: {
+    label: 'Browser Print',
+    desc: 'System print dialog for physical printers',
     extension: 'pdf',
     mime: 'application/pdf',
-    icon: 'bi-file-earmark-pdf',
-    badge: 'High-DPI',
+    icon: 'bi-printer-fill',
+    badge: 'System',
   },
   markdown: {
     label: 'Markdown (.md)',
+    desc: 'Raw markdown document source',
     extension: 'md',
     mime: 'text/markdown;charset=utf-8',
     icon: 'bi-file-earmark-text',
   },
   html: {
     label: 'HTML Document (.html)',
+    desc: 'Standalone themed web page',
     extension: 'html',
     mime: 'text/html;charset=utf-8',
     icon: 'bi-filetype-html',
