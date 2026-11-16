@@ -1,36 +1,43 @@
 import { FC, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { PdfMargins, DEFAULT_PDF_MARGINS } from '../../../../services/pdfGenerator';
+import {
+    PdfMargins,
+    DEFAULT_PDF_MARGINS,
+    PdfPageSize,
+    PDF_PAGE_SIZES,
+    DEFAULT_PDF_PAGE_SIZE,
+} from '../../../../services/pdfGenerator';
 
 interface PdfSettingsModalProps {
     open: boolean;
     onClose: () => void;
     margins: PdfMargins;
     smartPageBreaks: boolean;
-    onSave: (margins: PdfMargins, smartPageBreaks: boolean) => void;
+    pageSize?: PdfPageSize;
+    onSave: (margins: PdfMargins, smartPageBreaks: boolean, pageSize: PdfPageSize) => void;
     documentTitle?: string;
 }
-
-const PAGE_WIDTH_MM = 210;
-const PAGE_HEIGHT_MM = 297;
 
 export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
     open,
     onClose,
     margins: initialMargins,
     smartPageBreaks: initialSmartBreaks,
+    pageSize: initialPageSize = DEFAULT_PDF_PAGE_SIZE,
     onSave,
     documentTitle,
 }) => {
     const [margins, setMargins] = useState<PdfMargins>(initialMargins);
     const [smartBreaks, setSmartBreaks] = useState<boolean>(initialSmartBreaks);
+    const [pageSize, setPageSize] = useState<PdfPageSize>(initialPageSize);
 
     useEffect(() => {
         if (open) {
             setMargins(initialMargins);
             setSmartBreaks(initialSmartBreaks);
+            setPageSize(initialPageSize || DEFAULT_PDF_PAGE_SIZE);
         }
-    }, [open, initialMargins, initialSmartBreaks]);
+    }, [open, initialMargins, initialSmartBreaks, initialPageSize]);
 
     if (!open) return null;
 
@@ -43,11 +50,18 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
         }));
     };
 
-    const printableWidth = Math.max(10, PAGE_WIDTH_MM - margins.left - margins.right);
-    const printableHeight = Math.max(10, PAGE_HEIGHT_MM - margins.top - margins.bottom);
-    const pageArea = PAGE_WIDTH_MM * PAGE_HEIGHT_MM;
+    const curPageSize = PDF_PAGE_SIZES[pageSize] || PDF_PAGE_SIZES.A4;
+    const pageWidthMm = curPageSize.widthMm;
+    const pageHeightMm = curPageSize.heightMm;
+
+    const printableWidth = Math.max(10, pageWidthMm - margins.left - margins.right);
+    const printableHeight = Math.max(10, pageHeightMm - margins.top - margins.bottom);
+    const pageArea = pageWidthMm * pageHeightMm;
     const printableArea = printableWidth * printableHeight;
     const coveragePercent = Math.round((printableArea / pageArea) * 100);
+
+    const sheetHeight = 280;
+    const sheetWidth = Math.round(sheetHeight * (pageWidthMm / pageHeightMm));
 
     const isPresetActive = (top: number, right: number, bottom: number, left: number) =>
         margins.top === top &&
@@ -67,7 +81,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                         <div>
                             <h3 className="pdf-modal-title">PDF Page & Margin Setup</h3>
                             <p className="pdf-modal-subtitle">
-                                Configure page margins, printable area bounds, and smart break behavior
+                                Configure paper size, page margins, printable area bounds, and smart break behavior
                             </p>
                         </div>
                     </div>
@@ -83,22 +97,30 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
 
                 {/* Body: 2 Columns */}
                 <div className="pdf-modal-body">
-                    {/* Left Column: Live Interactive A4 Sheet Preview */}
+                    {/* Left Column: Live Interactive Sheet Preview */}
                     <div className="pdf-preview-col">
                         <div className="pdf-preview-header">
                             <span className="pdf-preview-badge">
                                 <i className="bi bi-eye" /> Live Page Preview
                             </span>
-                            <span className="pdf-preview-dimensions">A4 (210 × 297 mm)</span>
+                            <span className="pdf-preview-dimensions">
+                                {curPageSize.label} ({pageWidthMm} × {pageHeightMm} mm)
+                            </span>
                         </div>
 
-                        {/* Visual A4 Paper Sheet */}
+                        {/* Visual Paper Sheet */}
                         <div className="pdf-sheet-wrapper">
-                            <div className="pdf-sheet">
+                            <div
+                                className="pdf-sheet"
+                                style={{
+                                    width: `${sheetWidth}px`,
+                                    height: `${sheetHeight}px`,
+                                }}
+                            >
                                 {/* Top margin band */}
                                 <div
                                     className="pdf-margin-band pdf-margin-band-top"
-                                    style={{ height: `${(margins.top / PAGE_HEIGHT_MM) * 100}%` }}
+                                    style={{ height: `${(margins.top / pageHeightMm) * 100}%` }}
                                 >
                                     <span className="pdf-margin-pill pill-top">
                                         Top: {margins.top}mm
@@ -108,7 +130,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                                 {/* Bottom margin band */}
                                 <div
                                     className="pdf-margin-band pdf-margin-band-bottom"
-                                    style={{ height: `${(margins.bottom / PAGE_HEIGHT_MM) * 100}%` }}
+                                    style={{ height: `${(margins.bottom / pageHeightMm) * 100}%` }}
                                 >
                                     <span className="pdf-margin-pill pill-bottom">
                                         Bottom: {margins.bottom}mm
@@ -119,9 +141,9 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                                 <div
                                     className="pdf-margin-band pdf-margin-band-left"
                                     style={{
-                                        width: `${(margins.left / PAGE_WIDTH_MM) * 100}%`,
-                                        top: `${(margins.top / PAGE_HEIGHT_MM) * 100}%`,
-                                        bottom: `${(margins.bottom / PAGE_HEIGHT_MM) * 100}%`,
+                                        width: `${(margins.left / pageWidthMm) * 100}%`,
+                                        top: `${(margins.top / pageHeightMm) * 100}%`,
+                                        bottom: `${(margins.bottom / pageHeightMm) * 100}%`,
                                     }}
                                 >
                                     <span className="pdf-margin-pill pill-left">
@@ -133,9 +155,9 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                                 <div
                                     className="pdf-margin-band pdf-margin-band-right"
                                     style={{
-                                        width: `${(margins.right / PAGE_WIDTH_MM) * 100}%`,
-                                        top: `${(margins.top / PAGE_HEIGHT_MM) * 100}%`,
-                                        bottom: `${(margins.bottom / PAGE_HEIGHT_MM) * 100}%`,
+                                        width: `${(margins.right / pageWidthMm) * 100}%`,
+                                        top: `${(margins.top / pageHeightMm) * 100}%`,
+                                        bottom: `${(margins.bottom / pageHeightMm) * 100}%`,
                                     }}
                                 >
                                     <span className="pdf-margin-pill pill-right">
@@ -147,10 +169,10 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                                 <div
                                     className="pdf-printable-area"
                                     style={{
-                                        top: `${(margins.top / PAGE_HEIGHT_MM) * 100}%`,
-                                        bottom: `${(margins.bottom / PAGE_HEIGHT_MM) * 100}%`,
-                                        left: `${(margins.left / PAGE_WIDTH_MM) * 100}%`,
-                                        right: `${(margins.right / PAGE_WIDTH_MM) * 100}%`,
+                                        top: `${(margins.top / pageHeightMm) * 100}%`,
+                                        bottom: `${(margins.bottom / pageHeightMm) * 100}%`,
+                                        left: `${(margins.left / pageWidthMm) * 100}%`,
+                                        right: `${(margins.right / pageWidthMm) * 100}%`,
                                     }}
                                 >
                                     {/* Mock Document Content Representation */}
@@ -206,7 +228,36 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
 
                     {/* Right Column: Settings & Margin Controls */}
                     <div className="pdf-controls-col">
-                        {/* Section 1: Presets */}
+                        {/* Section 1: Page Size / Paper Format */}
+                        <div className="pdf-ctrl-section">
+                            <label className="pdf-ctrl-label">
+                                <i className="bi bi-aspect-ratio" /> Paper Format & Size
+                            </label>
+                            <div className="pdf-sizes-grid">
+                                {(
+                                    [
+                                        { id: 'A4', label: 'A4', sub: '210×297', tag: 'Standard' },
+                                        { id: 'A3', label: 'A3', sub: '297×420', tag: 'Large' },
+                                        { id: 'A5', label: 'A5', sub: '148×210', tag: 'Booklet' },
+                                        { id: 'Letter', label: 'Letter', sub: '8.5×11"', tag: 'US' },
+                                        { id: 'Legal', label: 'Legal', sub: '8.5×14"', tag: 'Extended' },
+                                    ] as const
+                                ).map(({ id, label, sub, tag }) => (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        className={`page-size-card ${pageSize === id ? 'active' : ''}`}
+                                        onClick={() => setPageSize(id)}
+                                    >
+                                        <span className="page-size-name">{label}</span>
+                                        <span className="page-size-val">{sub}</span>
+                                        <span className="page-size-tag">{tag}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Section 2: Presets */}
                         <div className="pdf-ctrl-section">
                             <label className="pdf-ctrl-label">
                                 <i className="bi bi-bookmark-star" /> Margin Presets
@@ -247,7 +298,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Section 2: Margin Steppers (Top, Right, Bottom, Left) */}
+                        {/* Section 3: Margin Steppers (Top, Right, Bottom, Left) */}
                         <div className="pdf-ctrl-section">
                             <label className="pdf-ctrl-label">
                                 <i className="bi bi-bounding-box" /> All 4 Margins (in millimeters)
@@ -302,7 +353,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Section 3: Smart Page Breaks Switch */}
+                        {/* Section 4: Smart Page Breaks Switch */}
                         <div className="pdf-ctrl-section">
                             <label className="pdf-ctrl-label">
                                 <i className="bi bi-scissors" /> Page Splitting Behavior
@@ -346,6 +397,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                         onClick={() => {
                             setMargins(DEFAULT_PDF_MARGINS);
                             setSmartBreaks(true);
+                            setPageSize(DEFAULT_PDF_PAGE_SIZE);
                         }}
                     >
                         <i className="bi bi-arrow-counterclockwise" /> Reset Defaults
@@ -358,7 +410,7 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
                             type="button"
                             className="modal-btn-primary"
                             onClick={() => {
-                                onSave(margins, smartBreaks);
+                                onSave(margins, smartBreaks, pageSize);
                             }}
                         >
                             <i className="bi bi-check2" /> Apply & Save Settings
@@ -368,6 +420,10 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
+};
+export default PdfSettingsModal;
 
     return createPortal(modalContent, document.body);
 };

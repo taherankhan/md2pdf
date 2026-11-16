@@ -5,6 +5,9 @@ import {
     exportViaBrowserPrint,
     PdfMargins,
     DEFAULT_PDF_MARGINS,
+    PdfPageSize,
+    PDF_PAGE_SIZES,
+    DEFAULT_PDF_PAGE_SIZE,
 } from '../../../../services/pdfGenerator';
 import {
     getPdfExportUserMessage,
@@ -56,6 +59,13 @@ const ExportButton: FC<ExportButtonProps> = ({
         } catch {}
         return true;
     });
+    const [pageSize, setPageSize] = useState<PdfPageSize>(() => {
+        try {
+            const saved = localStorage.getItem('md2pdf_page_size') as PdfPageSize;
+            if (saved && PDF_PAGE_SIZES[saved]) return saved;
+        } catch {}
+        return DEFAULT_PDF_PAGE_SIZE;
+    });
 
     const rootRef = useRef<HTMLDivElement>(null);
 
@@ -72,15 +82,21 @@ const ExportButton: FC<ExportButtonProps> = ({
         return () => document.removeEventListener('mousedown', onDoc);
     }, [menuOpen]);
 
-    const handleSaveSettings = (newMargins: PdfMargins, breaks: boolean) => {
+    const handleSaveSettings = (
+        newMargins: PdfMargins,
+        breaks: boolean,
+        newPageSize: PdfPageSize
+    ) => {
         setMargins(newMargins);
         setSmartPageBreaks(breaks);
+        setPageSize(newPageSize);
         try {
             localStorage.setItem('md2pdf_margins', JSON.stringify(newMargins));
             localStorage.setItem('md2pdf_smart_breaks', JSON.stringify(breaks));
+            localStorage.setItem('md2pdf_page_size', newPageSize);
         } catch {}
         setSettingsOpen(false);
-        toast.success('Page layout & margin settings saved!');
+        toast.success(`Page layout (${newPageSize}) & margin settings saved!`);
     };
 
     const runExport = async (format: ExportFormat) => {
@@ -115,6 +131,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                         themeId: effectiveThemeId,
                         margins,
                         smartPageBreaks,
+                        pageSize,
                     });
                 } else {
                     await generatePDFFromMarkdown(markdown, {
@@ -123,6 +140,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                         themeId: effectiveThemeId,
                         margins,
                         smartPageBreaks,
+                        pageSize,
                     });
                 }
             } else if (format === 'print') {
@@ -133,6 +151,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                     themeId: effectiveThemeId,
                     title: docTitle,
                     margins,
+                    pageSize,
                 });
             } else if (format === 'markdown') {
                 downloadTextFile(markdown, `${base}.md`, meta.mime);
@@ -268,6 +287,7 @@ const ExportButton: FC<ExportButtonProps> = ({
                 onClose={() => setSettingsOpen(false)}
                 margins={margins}
                 smartPageBreaks={smartPageBreaks}
+                pageSize={pageSize}
                 onSave={handleSaveSettings}
                 documentTitle={resolveDocumentTitle(exportBaseName, markdown)}
             />

@@ -426,12 +426,39 @@ function mapRenderError(error: unknown): never {
   throw new PdfExportError('RENDER_FAILED', 'PDF rendering failed. Check images and formatting.');
 }
 
+export type PdfPageSize = 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal';
+
+export interface PageSizeDefinition {
+  id: PdfPageSize;
+  label: string;
+  widthMm: number;
+  heightMm: number;
+  desc: string;
+}
+
+export const PDF_PAGE_SIZES: Record<PdfPageSize, PageSizeDefinition> = {
+  A4: { id: 'A4', label: 'A4', widthMm: 210, heightMm: 297, desc: '210 × 297 mm' },
+  A3: { id: 'A3', label: 'A3', widthMm: 297, heightMm: 420, desc: '297 × 420 mm' },
+  A5: { id: 'A5', label: 'A5', widthMm: 148, heightMm: 210, desc: '148 × 210 mm' },
+  Letter: { id: 'Letter', label: 'Letter', widthMm: 216, heightMm: 279, desc: '8.5 × 11 in' },
+  Legal: { id: 'Legal', label: 'Legal', widthMm: 216, heightMm: 356, desc: '8.5 × 14 in' },
+};
+
+export const DEFAULT_PDF_PAGE_SIZE: PdfPageSize = 'A4';
+
+export const GOOGLE_FONTS_LINK = `
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&family=Poppins:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+`;
+
 export interface PDFOptions {
   filename?: string;
   documentTitle?: string;
   themeId?: string;
   margins?: PdfMargins;
   smartPageBreaks?: boolean;
+  pageSize?: PdfPageSize;
 }
 
 const defaultOptions: PDFOptions = {
@@ -439,6 +466,7 @@ const defaultOptions: PDFOptions = {
   themeId: 'professional',
   margins: DEFAULT_PDF_MARGINS,
   smartPageBreaks: true,
+  pageSize: DEFAULT_PDF_PAGE_SIZE,
 };
 
 /**
@@ -450,7 +478,8 @@ async function downloadViaPuppeteerBackend(
   filename: string,
   documentTitle: string,
   margins: PdfMargins,
-  smartPageBreaks: boolean
+  smartPageBreaks: boolean,
+  pageSize: PdfPageSize = DEFAULT_PDF_PAGE_SIZE
 ): Promise<boolean> {
   try {
     const cleanTitle = (documentTitle && documentTitle.trim()) || filename.replace(/\.pdf$/i, '');
@@ -466,6 +495,7 @@ async function downloadViaPuppeteerBackend(
         title: cleanTitle,
         margins,
         smartPageBreaks,
+        pageSize,
       }),
     });
 
@@ -503,6 +533,7 @@ export const generatePDFFromMarkdown = async (
 ): Promise<void> => {
   const opts = { ...defaultOptions, ...options };
   const margins = opts.margins || DEFAULT_PDF_MARGINS;
+  const pageSize = opts.pageSize || DEFAULT_PDF_PAGE_SIZE;
   const docTitle =
     (opts.documentTitle && opts.documentTitle.trim()) ||
     (opts.filename ? opts.filename.replace(/\.pdf$/i, '') : 'Document');
@@ -544,34 +575,140 @@ export const generatePDFFromMarkdown = async (
       <head>
         <meta charset="utf-8">
         <title>${safeTitleTag}</title>
+        ${GOOGLE_FONTS_LINK}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
         <style>
           * { box-sizing: border-box; }
+          @page {
+            size: ${pageSize} portrait;
+            margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
+          }
           body {
             margin: 0;
             padding: 0;
             font-family: ${theme.fonts.body};
             color: ${theme.colors.text};
             background-color: ${theme.colors.background};
+            font-size: ${theme.fontSize.base};
+            line-height: ${theme.spacing.lineHeight};
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          ul, ol { padding-left: 30px; margin: 10px 0; }
-          li { margin: 5px 0; }
-          p { margin: ${theme.spacing.paragraphMargin} 0; line-height: ${theme.spacing.lineHeight}; }
-          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
-          th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
-          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
-          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; }
-          code { font-family: ${theme.fonts.code}; }
-          a { color: ${theme.colors.links}; text-decoration: none; }
-          h1, h2, h3, h4, h5, h6 {
-            font-weight: bold;
+          h1 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h1};
+            color: ${theme.colors.headings};
             margin-top: ${theme.spacing.headingMargin};
             margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 700;
+            line-height: 1.2;
+          }
+          h2 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h2};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 700;
             line-height: 1.25;
+          }
+          h3 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h3};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 600;
+            line-height: 1.3;
+          }
+          h4, h5, h6 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h4};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 600;
+            line-height: 1.35;
+          }
+          p {
+            margin: ${theme.spacing.paragraphMargin} 0;
+            line-height: ${theme.spacing.lineHeight};
+            color: ${theme.colors.text};
+          }
+          a {
+            color: ${theme.colors.links};
+            text-decoration: underline;
+          }
+          code {
+            font-family: ${theme.fonts.code};
+            font-size: ${theme.fontSize.code};
+            background-color: ${theme.colors.codeBackground};
+            color: ${theme.colors.codeText};
+            padding: 2px 6px;
+            border-radius: 4px;
+          }
+          pre {
+            background-color: ${theme.colors.codeBackground};
+            color: ${theme.colors.codeText};
+            padding: 14px 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 14px 0 16px;
+            font-family: ${theme.fonts.code};
+            font-size: ${theme.fontSize.code};
+            border: 1px solid ${theme.colors.tableBorder};
+          }
+          pre code {
+            background: none !important;
+            padding: 0 !important;
+            color: inherit !important;
+            border-radius: 0 !important;
+          }
+          blockquote {
+            border-left: 4px solid ${theme.colors.quoteBorder};
+            padding: 8px 16px;
+            margin: 14px 0;
+            color: ${theme.colors.quoteText};
+            background-color: ${theme.id === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'};
+            border-radius: 0 6px 6px 0;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 14px 0 18px;
+            border: 1px solid ${theme.colors.tableBorder};
+          }
+          th, td {
+            border: 1px solid ${theme.colors.tableBorder};
+            padding: 8px 12px;
+            text-align: left;
+            color: ${theme.colors.text};
+          }
+          th {
+            background-color: ${theme.colors.tableHeaderBg};
+            color: ${theme.colors.headings};
+            font-weight: 700;
+          }
+          hr {
+            border: none;
+            border-top: 1px solid ${theme.colors.tableBorder};
+            margin: 20px 0;
+          }
+          ul, ol {
+            padding-left: 28px;
+            margin: 10px 0;
+            color: ${theme.colors.text};
+          }
+          li {
+            margin: 4px 0;
           }
           .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
           .mermaid svg { max-width: 100%; height: auto; }
           ${MERMAID_DIAGRAM_STYLES}
+          ${(opts.smartPageBreaks ?? true) ? `
+          h1, h2, h3, h4, h5, h6 { page-break-after: avoid; break-after: avoid; }
+          pre, blockquote, table, tr, .mermaid { page-break-inside: avoid; break-inside: avoid; }
+          ` : ''}
         </style>
       </head>
       <body>
@@ -584,7 +721,7 @@ export const generatePDFFromMarkdown = async (
     `);
     sandboxDoc.close();
 
-    await renderMermaidInDocument(sandboxDoc);
+    await renderMermaidInDocument(sandboxDoc, theme.id === 'dark');
     await waitForMermaidPaint(600);
 
     const prism = (sandboxDoc.defaultView as any)?.Prism || Prism;
@@ -602,7 +739,8 @@ export const generatePDFFromMarkdown = async (
       opts.filename || 'document.pdf',
       docTitle,
       margins,
-      opts.smartPageBreaks ?? true
+      opts.smartPageBreaks ?? true,
+      pageSize
     );
     if (downloadedViaPuppeteer) {
       return;
@@ -627,7 +765,7 @@ export const generatePDFFromMarkdown = async (
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
-      format: 'a4',
+      format: pageSize.toLowerCase() as any,
       compress: true,
     });
     pdf.setProperties({
@@ -657,6 +795,7 @@ export const generatePDFFromElement = async (
   const opts = { ...defaultOptions, ...options };
   const theme = getTheme(opts.themeId || 'professional');
   const margins = opts.margins || DEFAULT_PDF_MARGINS;
+  const pageSize = opts.pageSize || DEFAULT_PDF_PAGE_SIZE;
   const docTitle =
     (opts.documentTitle && opts.documentTitle.trim()) ||
     (opts.filename ? opts.filename.replace(/\.pdf$/i, '') : 'Document');
@@ -713,35 +852,141 @@ export const generatePDFFromElement = async (
       <head>
         <meta charset="utf-8">
         <title>${safeTitleTag}</title>
+        ${GOOGLE_FONTS_LINK}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
         <style>
           * { box-sizing: border-box; }
+          @page {
+            size: ${pageSize} portrait;
+            margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
+          }
           body {
             margin: 0;
             padding: 0;
             font-family: ${theme.fonts.body};
             color: ${theme.colors.text};
             background-color: ${theme.colors.background};
+            font-size: ${theme.fontSize.base};
+            line-height: ${theme.spacing.lineHeight};
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          ul, ol { padding-left: 30px; margin: 10px 0; }
-          li { margin: 5px 0; }
-          p { margin: ${theme.spacing.paragraphMargin} 0; line-height: ${theme.spacing.lineHeight}; }
-          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
-          th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
-          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
-          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; }
-          code { font-family: ${theme.fonts.code}; }
-          a { color: ${theme.colors.links}; text-decoration: none; }
-          h1, h2, h3, h4, h5, h6 {
-            font-weight: bold;
+          h1 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h1};
+            color: ${theme.colors.headings};
             margin-top: ${theme.spacing.headingMargin};
             margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 700;
+            line-height: 1.2;
+          }
+          h2 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h2};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 700;
             line-height: 1.25;
+          }
+          h3 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h3};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 600;
+            line-height: 1.3;
+          }
+          h4, h5, h6 {
+            font-family: ${theme.fonts.headings};
+            font-size: ${theme.fontSize.h4};
+            color: ${theme.colors.headings};
+            margin-top: ${theme.spacing.headingMargin};
+            margin-bottom: ${theme.spacing.paragraphMargin};
+            font-weight: 600;
+            line-height: 1.35;
+          }
+          p {
+            margin: ${theme.spacing.paragraphMargin} 0;
+            line-height: ${theme.spacing.lineHeight};
+            color: ${theme.colors.text};
+          }
+          a {
+            color: ${theme.colors.links};
+            text-decoration: underline;
+          }
+          code {
+            font-family: ${theme.fonts.code};
+            font-size: ${theme.fontSize.code};
+            background-color: ${theme.colors.codeBackground};
+            color: ${theme.colors.codeText};
+            padding: 2px 6px;
+            border-radius: 4px;
+          }
+          pre {
+            background-color: ${theme.colors.codeBackground};
+            color: ${theme.colors.codeText};
+            padding: 14px 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 14px 0 16px;
+            font-family: ${theme.fonts.code};
+            font-size: ${theme.fontSize.code};
+            border: 1px solid ${theme.colors.tableBorder};
+          }
+          pre code {
+            background: none !important;
+            padding: 0 !important;
+            color: inherit !important;
+            border-radius: 0 !important;
+          }
+          blockquote {
+            border-left: 4px solid ${theme.colors.quoteBorder};
+            padding: 8px 16px;
+            margin: 14px 0;
+            color: ${theme.colors.quoteText};
+            background-color: ${theme.id === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'};
+            border-radius: 0 6px 6px 0;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 14px 0 18px;
+            border: 1px solid ${theme.colors.tableBorder};
+          }
+          th, td {
+            border: 1px solid ${theme.colors.tableBorder};
+            padding: 8px 12px;
+            text-align: left;
+            color: ${theme.colors.text};
+          }
+          th {
+            background-color: ${theme.colors.tableHeaderBg};
+            color: ${theme.colors.headings};
+            font-weight: 700;
+          }
+          hr {
+            border: none;
+            border-top: 1px solid ${theme.colors.tableBorder};
+            margin: 20px 0;
+          }
+          ul, ol {
+            padding-left: 28px;
+            margin: 10px 0;
+            color: ${theme.colors.text};
+          }
+          li {
+            margin: 4px 0;
           }
           .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
           .mermaid svg { max-width: 100%; height: auto; }
           ${MERMAID_DIAGRAM_STYLES}
           ${iframeStyles}
+          ${(opts.smartPageBreaks ?? true) ? `
+          h1, h2, h3, h4, h5, h6 { page-break-after: avoid; break-after: avoid; }
+          pre, blockquote, table, tr, .mermaid { page-break-inside: avoid; break-inside: avoid; }
+          ` : ''}
         </style>
       </head>
       <body>
@@ -754,7 +999,7 @@ export const generatePDFFromElement = async (
     `);
     sandboxDoc.close();
 
-    await renderMermaidInDocument(sandboxDoc);
+    await renderMermaidInDocument(sandboxDoc, theme.id === 'dark');
     await waitForMermaidPaint(600);
 
     const prism = (sandboxDoc.defaultView as any)?.Prism || Prism;
@@ -772,7 +1017,8 @@ export const generatePDFFromElement = async (
       opts.filename || 'document.pdf',
       docTitle,
       margins,
-      opts.smartPageBreaks ?? true
+      opts.smartPageBreaks ?? true,
+      pageSize
     );
     if (downloadedViaPuppeteer) {
       return;
@@ -797,7 +1043,7 @@ export const generatePDFFromElement = async (
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
-      format: 'a4',
+      format: pageSize.toLowerCase() as any,
       compress: true,
     });
     pdf.setProperties({
@@ -822,6 +1068,7 @@ export interface PrintOptions {
   themeId?: string;
   title?: string;
   margins?: PdfMargins;
+  pageSize?: PdfPageSize;
 }
 
 /**
@@ -833,6 +1080,7 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
   const theme = getTheme(options.themeId || 'professional');
   const title = options.title || 'document';
   const margins = options.margins || DEFAULT_PDF_MARGINS;
+  const pageSize = options.pageSize || DEFAULT_PDF_PAGE_SIZE;
 
   let printHtml = '';
   let customStyles = '';
@@ -888,6 +1136,7 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
       <head>
         <meta charset="utf-8">
         <title>${title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</title>
+        ${GOOGLE_FONTS_LINK}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.28.0/themes/prism-tomorrow.min.css">
         <style>
           * { box-sizing: border-box; }
@@ -896,18 +1145,18 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
             padding: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
             font-family: ${theme.fonts.body};
             color: ${theme.colors.text};
-            background-color: #ffffff;
+            background-color: ${theme.colors.background};
             font-size: ${theme.fontSize.base};
             line-height: ${theme.spacing.lineHeight};
           }
           @page {
-            size: A4 portrait;
+            size: ${pageSize} portrait;
             margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm;
           }
           @media print {
             body {
-              background-color: #ffffff !important;
-              color: #111827 !important;
+              background-color: ${theme.colors.background} !important;
+              color: ${theme.colors.text} !important;
               padding: 0 !important;
               margin: 0 !important;
               -webkit-print-color-adjust: exact !important;
@@ -927,11 +1176,12 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
             margin-top: ${theme.spacing.headingMargin};
             margin-bottom: ${theme.spacing.paragraphMargin};
             line-height: 1.25;
+            color: ${theme.colors.headings};
           }
-          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; border: 1px solid ${theme.colors.tableBorder}; }
           th, td { border: 1px solid ${theme.colors.tableBorder}; padding: 8px 12px; }
-          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; }
-          pre { margin: 12px 0 16px; padding: 14px; background-color: #2d2d30; color: #ccc; border-radius: 6px; overflow-x: auto; }
+          th { background-color: ${theme.colors.tableHeaderBg}; font-weight: bold; color: ${theme.colors.headings}; }
+          pre { margin: 12px 0 16px; padding: 14px; background-color: ${theme.colors.codeBackground}; color: ${theme.colors.codeText}; border-radius: 6px; overflow-x: auto; border: 1px solid ${theme.colors.tableBorder}; }
           code { font-family: ${theme.fonts.code}; }
           .mermaid { display: flex; justify-content: center; margin: 1.2rem 0; max-width: 100%; }
           .mermaid svg { max-width: 100%; height: auto; }
@@ -949,7 +1199,7 @@ export const exportViaBrowserPrint = async (options: PrintOptions): Promise<void
     `);
     printDoc.close();
 
-    await renderMermaidInDocument(printDoc);
+    await renderMermaidInDocument(printDoc, theme.id === 'dark');
     await waitForMermaidPaint(400);
 
     await new Promise((resolve) => setTimeout(resolve, 300));

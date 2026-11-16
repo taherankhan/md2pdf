@@ -65,21 +65,18 @@ function checkAndSanitizeErrorSvg(node: HTMLElement): boolean {
 /**
  * Render diagrams in any document using the bundled mermaid package (PDF / off-screen export).
  */
-export async function renderMermaidInDocument(doc: Document): Promise<void> {
+export async function renderMermaidInDocument(doc: Document, isDark = false): Promise<void> {
   const nodes = unrenderedMermaidNodes(doc);
   if (!nodes.length) return;
 
   const { default: mermaid } = await import('mermaid');
-  if (!bundledInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'neutral',
-      securityLevel: 'loose',
-      fontFamily: 'Inter, system-ui, sans-serif',
-      suppressErrorRendering: true,
-    });
-    bundledInitialized = true;
-  }
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: isDark ? 'dark' : 'neutral',
+    securityLevel: 'loose',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    suppressErrorRendering: true,
+  });
 
   for (const node of nodes) {
     try {

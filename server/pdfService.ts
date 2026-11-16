@@ -11,6 +11,7 @@ export interface GeneratePdfOptions {
     left?: number;
   };
   smartPageBreaks?: boolean;
+  pageSize?: string;
 }
 
 /**
@@ -121,9 +122,15 @@ export async function generatePdfBuffer(options: GeneratePdfOptions): Promise<Bu
     await new Promise((r) => setTimeout(r, 350));
 
     const margins = options.margins || { top: 15, right: 15, bottom: 15, left: 15 };
+    const validFormats = ['A4', 'A3', 'A5', 'Letter', 'Legal'] as const;
+    const requestedFormat = (
+      options.pageSize && validFormats.includes(options.pageSize as any)
+        ? options.pageSize
+        : 'A4'
+    ) as any;
 
     const pdfUint8Array = await page.pdf({
-      format: 'A4',
+      format: requestedFormat,
       printBackground: true,
       tagged: true,
       margin: {

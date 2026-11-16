@@ -138,7 +138,7 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
 // POST /pdf/generate - High-fidelity vector PDF generation
 apiRouter.post('/pdf/generate', async (req: Request, res: Response) => {
   try {
-    const { html, title, margins, smartPageBreaks } = req.body || {};
+    const { html, title, margins, smartPageBreaks, pageSize } = req.body || {};
     if (!html || typeof html !== 'string') {
       return res.status(400).json({ error: 'HTML content string is required for PDF generation.' });
     }
@@ -149,6 +149,7 @@ apiRouter.post('/pdf/generate', async (req: Request, res: Response) => {
       title: rawTitle,
       margins,
       smartPageBreaks,
+      pageSize: typeof pageSize === 'string' ? pageSize : undefined,
     });
 
     const safeFilename =
@@ -672,4 +673,5 @@ apiRouter.post('/contact', contactLimiter, async (req: Request, res: Response) =
 app.use('/api', apiRouter);
 app.use('/', apiRouter);
 
+export { generatePdfBuffer };
 export default app;

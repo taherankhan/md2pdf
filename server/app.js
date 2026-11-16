@@ -173,8 +173,10 @@ async function generatePdfBuffer(options) {
     });
     await new Promise((r) => setTimeout(r, 350));
     const margins = options.margins || { top: 15, right: 15, bottom: 15, left: 15 };
+    const validFormats = ["A4", "A3", "A5", "Letter", "Legal"];
+    const requestedFormat = options.pageSize && validFormats.includes(options.pageSize) ? options.pageSize : "A4";
     const pdfUint8Array = await page.pdf({
-      format: "A4",
+      format: requestedFormat,
       printBackground: true,
       tagged: true,
       margin: {
@@ -385,7 +387,7 @@ apiRouter.get("/health", (_req, res) => {
 });
 apiRouter.post("/pdf/generate", async (req, res) => {
   try {
-    const { html, title, margins, smartPageBreaks } = req.body || {};
+    const { html, title, margins, smartPageBreaks, pageSize } = req.body || {};
     if (!html || typeof html !== "string") {
       return res.status(400).json({ error: "HTML content string is required for PDF generation." });
     }
@@ -394,7 +396,8 @@ apiRouter.post("/pdf/generate", async (req, res) => {
       html,
       title: rawTitle,
       margins,
-      smartPageBreaks
+      smartPageBreaks,
+      pageSize: typeof pageSize === "string" ? pageSize : void 0
     });
     const safeFilename = rawTitle.replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").slice(0, 80) || "document";
     res.setHeader("Content-Type", "application/pdf");
@@ -779,5 +782,6 @@ app.use("/api", apiRouter);
 app.use("/", apiRouter);
 var app_default = app;
 export {
-  app_default as default
+  app_default as default,
+  generatePdfBuffer
 };
