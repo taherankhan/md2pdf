@@ -326,17 +326,17 @@
 }
 
 /* ════════════════════════════════════════════════════════════
-   TABLET  ≤ 1024px
+   TABLET  ≤ 1140px
    ════════════════════════════════════════════════════════════ */
-@media (max-width: 1024px) {
-  .lp-nav-link        { padding: 7px 10px; font-size: 13px; }
-  .lp-nav-cta--desktop { padding: 8px 14px; font-size: 12.5px; }
+@media (max-width: 1140px) {
+  .lp-nav-link        { padding: 6px 8px; font-size: 12.5px; }
+  .lp-nav-cta--desktop { padding: 7px 12px; font-size: 12px; }
 }
 
 /* ════════════════════════════════════════════════════════════
-   MOBILE  ≤ 860px
+   MOBILE  ≤ 960px
    ════════════════════════════════════════════════════════════ */
-@media (max-width: 860px) {
+@media (max-width: 960px) {
   .lp-header-inner {
     display: flex;
     justify-content: space-between;

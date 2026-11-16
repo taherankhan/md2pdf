@@ -8,10 +8,13 @@ import { UserAvatarMenu } from '../auth/components/UserAvatarMenu';
 import './LandingHeader.css';
 
 const NAV_LINKS = [
-  { label: 'Features',  sectionId: 'lp-features'  },
-  { label: 'Use Cases', sectionId: 'lp-usecases'  },
-  { label: 'Themes',    sectionId: 'lp-themes'    },
-  { label: 'About',     sectionId: 'lp-contact'   },
+  { label: 'Features',   sectionId: 'lp-features'   },
+  { label: 'Diagrams',   sectionId: 'lp-diagrams'   },
+  { label: 'Page Setup', sectionId: 'lp-page-setup' },
+  { label: 'Cloud Sync', sectionId: 'lp-cloud-sync' },
+  { label: 'Compare',    sectionId: 'lp-compare'    },
+  { label: 'Workflow',   sectionId: 'lp-workflow'   },
+  { label: 'FAQ',        sectionId: 'lp-faq'        },
 ] as const;
 
 const LandingHeader: FC = () => {

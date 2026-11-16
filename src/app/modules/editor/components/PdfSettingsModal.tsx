@@ -424,7 +424,3 @@ export const PdfSettingsModal: FC<PdfSettingsModalProps> = ({
     return createPortal(modalContent, document.body);
 };
 export default PdfSettingsModal;
-
-    return createPortal(modalContent, document.body);
-};
-export default PdfSettingsModal;

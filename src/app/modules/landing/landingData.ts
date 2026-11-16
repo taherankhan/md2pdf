@@ -18,85 +18,344 @@ export type WorkflowStep = {
   num: string;
   title: string;
   desc: string;
+  icon: string;
+  tag: string;
+};
+
+export type FaqItem = {
+  q: string;
+  a: string;
+  category: string;
+};
+
+export type ComparisonRow = {
+  feature: string;
+  category: string;
+  md2pdfx: string | boolean;
+  browserPrint: string | boolean;
+  onlineConverters: string | boolean;
+  pandocCli: string | boolean;
+  highlight?: boolean;
+};
+
+export type DiagramTab = {
+  id: string;
+  label: string;
+  badge: string;
+  icon: string;
+  title: string;
+  desc: string;
+  code: string;
+  previewType: 'sequence' | 'flowchart' | 'er' | 'mindmap';
 };
 
 export const USE_CASES: UseCase[] = [
   {
-    icon: '📄',
-    cls: 'fi-purple',
-    title: 'Professional Resumes',
-    desc: 'Craft polished CVs and resumes with structured Markdown and export them as print-ready PDFs with elegant typography.',
-    tag: '🚀 Most Popular',
+    icon: '💻',
+    cls: 'fi-cyan',
+    title: 'Architecture & Engineering Specs',
+    desc: 'Document microservices, distributed systems, and API contracts with live syntax-highlighted code and native vector Mermaid diagrams.',
+    tag: '⚡ Developers & Architects',
     num: '01',
   },
   {
-    icon: '📊',
-    cls: 'fi-cyan',
-    title: 'Technical Reports',
-    desc: 'Fenced code, tables, and Mermaid diagrams in preview — export to PDF, Markdown, or HTML when you are ready.',
-    tag: '💻 Developer Favourite',
+    icon: '📄',
+    cls: 'fi-purple',
+    title: 'Professional Resumes & CVs',
+    desc: 'Craft ATS-friendly, pixel-perfect resumes using structured Markdown, curated CV typography, and guaranteed single-page layouts.',
+    tag: '🚀 Job Seekers',
     num: '02',
   },
   {
     icon: '📚',
     cls: 'fi-pink',
-    title: 'Study Notes & Guides',
-    desc: 'Organise lecture notes, revision guides, and cheat-sheets in Markdown and convert them to shareable PDFs instantly.',
-    tag: '🎓 Students',
+    title: 'Academic Papers & Study Guides',
+    desc: 'Format research notes, theses, and formula-rich study guides with classic serif Merriweather typography and elegant table borders.',
+    tag: '🎓 Academics & Students',
     num: '03',
   },
   {
-    icon: '📝',
+    icon: '💼',
     cls: 'fi-amber',
-    title: 'Business Proposals',
-    desc: 'Create professional project proposals, SOWs, and client documents with branded themes that impress at first glance.',
-    tag: '💼 Business',
+    title: 'Business Proposals & SOWs',
+    desc: 'Deliver branded Statements of Work, client proposals, and executive summaries with custom millimeter margins and print-ready covers.',
+    tag: '📈 Product & Business',
     num: '04',
   },
 ];
 
-/** Matches editor `themeConfig` names — used for hero/themes preview only */
+/** Matches editor `themeConfig` names — used for hero/themes preview */
 export const THEMES: PdfTheme[] = [
-  { name: 'Professional', desc: 'Default print style', bg: 'linear-gradient(135deg,#f8fafc,#e2e8f0)', text: '#1e293b' },
-  { name: 'Academic', desc: 'Formal documents', bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', text: '#422006' },
-  { name: 'Minimal', desc: 'Light & airy', bg: 'linear-gradient(135deg,#ffffff,#f1f5f9)', text: '#334155' },
-  { name: 'Creative', desc: 'Accent headings', bg: 'linear-gradient(135deg,#faf5ff,#ede9fe)', text: '#5b21b6' },
-  { name: 'Dark', desc: 'Low-light reading', bg: 'linear-gradient(135deg,#0f172a,#1e293b)', text: '#f1f5f9' },
-  { name: 'Resume', desc: 'CV-friendly', bg: 'linear-gradient(135deg,#ecfdf5,#d1fae5)', text: '#065f46' },
+  { name: 'Professional', desc: 'Default corporate print style', bg: 'linear-gradient(135deg,#f8fafc,#e2e8f0)', text: '#1e293b' },
+  { name: 'Academic', desc: 'Formal serif research style', bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', text: '#422006' },
+  { name: 'Minimal', desc: 'Light & airy minimalist layout', bg: 'linear-gradient(135deg,#ffffff,#f1f5f9)', text: '#334155' },
+  { name: 'Creative', desc: 'Vibrant headings & modern accents', bg: 'linear-gradient(135deg,#faf5ff,#ede9fe)', text: '#5b21b6' },
+  { name: 'Dark', desc: 'OLED dark mode reading layout', bg: 'linear-gradient(135deg,#0f172a,#1e293b)', text: '#f1f5f9' },
+  { name: 'Resume', desc: 'CV-optimized compact layout', bg: 'linear-gradient(135deg,#ecfdf5,#d1fae5)', text: '#065f46' },
 ];
 
 export const STEPS: WorkflowStep[] = [
-  { num: '1', title: 'Write or upload', desc: 'Type markdown directly or upload a .md file to start.' },
-  { num: '2', title: 'Edit & preview', desc: 'Switch Edit, Split, or Preview — format bar and Mermaid in the pane.' },
-  { num: '3', title: 'Theme & customize', desc: 'Pick from 6 curated themes with custom 4-sided margins and smart page breaks.' },
-  { num: '4', title: 'Vector PDF Export', desc: 'Download book-grade vector PDF generated via Puppeteer Chromium engine, Markdown, or HTML.' },
+  {
+    num: '01',
+    icon: 'bi-pencil-square',
+    tag: 'Write & Import',
+    title: 'Draft Markdown or Upload .md',
+    desc: 'Use our split CodeMirror editor with instant formatting shortcuts, or drag-and-drop existing Markdown documentation.',
+  },
+  {
+    num: '02',
+    icon: 'bi-diagram-3-fill',
+    tag: 'Visualize & Style',
+    title: 'Add Diagrams & Choose Theme',
+    desc: 'Drop in flowcharts, sequence diagrams, and code snippets. Select from 6 print-ready themes with automatic dark/light diagram tuning.',
+  },
+  {
+    num: '03',
+    icon: 'bi-aspect-ratio-fill',
+    tag: 'Page Geometry',
+    title: 'Configure Paper Size & Margins',
+    desc: 'Choose A4, A3, A5, Letter, or Legal with millimeter margin precision. Smart Page Breaks ensure zero cut-off code blocks or tables.',
+  },
+  {
+    num: '04',
+    icon: 'bi-file-earmark-pdf-fill',
+    tag: 'Vector Export',
+    title: 'Generate Crisp Vector PDF',
+    desc: 'Export high-DPI, searchable vector PDFs generated by Headless Chromium, or download standalone themed HTML and raw Markdown.',
+  },
+];
+
+export const DIAGRAM_TABS: DiagramTab[] = [
+  {
+    id: 'sequence',
+    label: 'Sequence Diagram',
+    badge: 'API & Auth',
+    icon: 'bi-arrow-left-right',
+    title: 'API Authentication & Token Flows',
+    desc: 'Illustrate distributed microservices, OAuth exchanges, and webhook pipelines with clean participants, notes, and autonumbering.',
+    previewType: 'sequence',
+    code: `sequenceDiagram
+  autonumber
+  actor User as Client App
+  participant API as API Gateway
+  participant Auth as Auth Server
+  participant DB as MongoDB Atlas
+
+  User->>API: POST /api/v1/auth/login
+  API->>Auth: Validate JWT & Claims
+  Auth->>DB: Query User Permissions
+  DB-->>Auth: Return User Session
+  Auth-->>API: Issue Access Token (Bearer)
+  API-->>User: 200 OK { token, expires_in }`,
+  },
+  {
+    id: 'flowchart',
+    label: 'Cloud Flowchart',
+    badge: 'DevOps & Infra',
+    icon: 'bi-diagram-2-fill',
+    title: 'High-Availability Infrastructure Architecture',
+    desc: 'Map out deployment pipelines, CDN caches, multi-region failovers, and Docker microservices with native branch routing.',
+    previewType: 'flowchart',
+    code: `flowchart TD
+  User([Global Traffic]) --> CDN[Edge CDN & WAF]
+  CDN --> LB{Load Balancer}
+  LB -->|Primary Region| S1[App Service Cluster]
+  LB -->|DR Failover| S2[Replica Region Cluster]
+  S1 --> Cache[(Redis Cache)]
+  S1 --> DB[(MongoDB Atlas Cluster)]
+  S2 --> DB
+  Cache -.->|Cache Miss| DB`,
+  },
+  {
+    id: 'er',
+    label: 'ER Diagram',
+    badge: 'Database Schema',
+    icon: 'bi-table',
+    title: 'Relational & Document Data Models',
+    desc: 'Generate database models and relationship diagrams directly from code without tedious drawing tools.',
+    previewType: 'er',
+    code: `erDiagram
+  USER ||--o{ DOCUMENT : owns
+  USER ||--o{ SHARE_LINK : generates
+  DOCUMENT ||--o{ REVISION : tracks
+  USER {
+    string id PK
+    string email
+    string name
+    datetime createdAt
+  }
+  DOCUMENT {
+    string id PK
+    string title
+    string content
+    string theme
+    string pageSize
+  }`,
+  },
+  {
+    id: 'mindmap',
+    label: 'Mindmap',
+    badge: 'Product Strategy',
+    icon: 'bi-node-plus-fill',
+    title: 'Product Roadmaps & System Breakdown',
+    desc: 'Structure brainstorming sessions, feature breakdowns, and team milestones with hierarchical tree visualizers.',
+    previewType: 'mindmap',
+    code: `mindmap
+  root((MD2PDFX Platform))
+    Core Engine
+      Puppeteer Headless Chromium
+      Vector SVG Rendering
+      Zero-Cut Smart Breaks
+    Document Storage
+      Google 1-Click OAuth
+      MongoDB Cloud Sync
+      Offline LocalStorage
+    Print Geometry
+      A3 / A4 / A5 Formats
+      US Letter & Legal
+      4-Sided MM Margins`,
+  },
+];
+
+export const COMPARISON_ROWS: ComparisonRow[] = [
+  {
+    feature: 'PDF Rendering Quality',
+    category: 'Output',
+    md2pdfx: '100% Native Vector PDF (Puppeteer)',
+    browserPrint: 'Browser Print (Variable)',
+    onlineConverters: 'Raster Canvas Screenshot (Blurry)',
+    pandocCli: 'Vector PDF (Requires LaTeX)',
+    highlight: true,
+  },
+  {
+    feature: 'Mermaid Diagram Support',
+    category: 'Diagrams',
+    md2pdfx: 'Native v11 + Unfenced Auto-Detect',
+    browserPrint: 'Often clipped or distorted',
+    onlineConverters: 'Broken or unsupported',
+    pandocCli: 'Requires complex filter setup',
+    highlight: true,
+  },
+  {
+    feature: 'Page Sizes (A3, A4, A5, Letter, Legal)',
+    category: 'Layout',
+    md2pdfx: '1-Click Paper Formats with Live Preview',
+    browserPrint: 'Printer default only',
+    onlineConverters: 'Fixed A4 only',
+    pandocCli: 'CLI geometry flags',
+    highlight: true,
+  },
+  {
+    feature: 'Smart Page Breaks (Zero Code Cuts)',
+    category: 'Layout',
+    md2pdfx: 'Intelligent orphan & cut prevention',
+    browserPrint: 'Randomly cuts code lines in half',
+    onlineConverters: 'Randomly cuts code lines in half',
+    pandocCli: 'Manual \\pagebreak tags',
+    highlight: true,
+  },
+  {
+    feature: 'Cloud Draft Library & Google OAuth',
+    category: 'Storage',
+    md2pdfx: 'Instant Sync + MongoDB Atlas',
+    browserPrint: 'None (Local memory only)',
+    onlineConverters: 'None',
+    pandocCli: 'None (Local filesystem)',
+  },
+  {
+    feature: 'Curated Print Themes & Google Fonts',
+    category: 'Design',
+    md2pdfx: '6 Curated Themes + Typography',
+    browserPrint: 'Default browser font',
+    onlineConverters: 'Generic monospace',
+    pandocCli: 'Requires manual LaTeX template',
+  },
+  {
+    feature: 'Dark Mode Vector PDF Output',
+    category: 'Design',
+    md2pdfx: 'Full Dark Mode (OLED black & light text)',
+    browserPrint: 'Inverts colors / forces white',
+    onlineConverters: 'Forces plain white',
+    pandocCli: 'Manual CSS tuning',
+  },
+  {
+    feature: 'Privacy & Offline Resilience',
+    category: 'Security',
+    md2pdfx: 'Client Sandbox + Private Documents',
+    browserPrint: 'Browser only',
+    onlineConverters: 'Uploads files to unknown servers',
+    pandocCli: 'Local machine only',
+  },
+];
+
+export const SEO_FAQS: FaqItem[] = [
+  {
+    category: 'Diagrams & Code',
+    q: 'How does MD2PDFX render Mermaid diagrams into PDFs?',
+    a: 'MD2PDFX integrates the latest Mermaid.js v11 diagramming engine. When you write sequence diagrams, flowcharts, class diagrams, ER diagrams, or mindmaps (with or without code fences), our renderer converts them into crisp, scalable vector SVGs. When exported to PDF via our Headless Chromium engine, the diagrams maintain razor-sharp vector clarity at 400% zoom without any blurriness or pixelation.',
+  },
+  {
+    category: 'Export Quality',
+    q: 'Are the exported PDFs vector-based or raster images?',
+    a: 'Every PDF exported through our Headless Chromium engine is 100% native vector. This means all headings, body text, code blocks, and SVG diagrams remain selectable, searchable, and printable at publication grade (300+ DPI). Hyperlinks remain fully clickable, and internal document title metadata is properly embedded.',
+  },
+  {
+    category: 'Layout & Printing',
+    q: 'How do Smart Page Breaks prevent cutting my code blocks and tables?',
+    a: 'Generic converters and browser print engines calculate pagination purely by height, which frequently slices code blocks, table rows, and diagrams right through the middle. MD2PDFX uses an intelligent pagination algorithm that measures block elements. If a code snippet, diagram, or table does not cleanly fit on the remaining page space, it automatically shifts it to the top of the next page.',
+  },
+  {
+    category: 'Paper Formats',
+    q: 'Which paper formats and page sizes are supported?',
+    a: 'You can choose between five international and North American standards: A4 (Standard documentation), A3 (Wide architecture diagrams & posters), A5 (Compact booklets & pocket reference guides), US Letter (8.5 × 11 in for North American business), and US Legal (8.5 × 14 in for contracts and SOWs). You can also customize all four margins down to the millimeter or select Full Bleed (0 mm).',
+  },
+  {
+    category: 'Cloud & Sync',
+    q: 'How does the Cloud Library and Google Sign-In work?',
+    a: 'You can use MD2PDFX completely anonymously without an account. If you sign in with Google OAuth (1-click, zero passwords), your documents automatically save to your personal cloud library backed by MongoDB Atlas. You can access your saved drafts from any device, generate shareable read-only links, and work offline seamlessly thanks to local fallback caching.',
+  },
+  {
+    category: 'Security & Privacy',
+    q: 'Is my Markdown content secure and private?',
+    a: 'Yes. By default, your documents stay strictly inside your browser sandbox. When using cloud saving, your documents are linked exclusively to your authenticated Google account and stored with enterprise-grade encryption. We never sell, track, or index your private document content.',
+  },
+  {
+    category: 'Themes & Styling',
+    q: 'Can I export in Dark Mode or academic serif styles?',
+    a: 'Yes! MD2PDFX includes 6 professionally curated typography themes: Professional (clean corporate), Academic (Merriweather serif for research), Minimal (airy modern), Creative (vibrant accents), Dark (OLED black background with light text for digital handbooks), and Resume (tight line spacing optimized for CVs). Each theme pairs with matching syntax highlighting and diagram color palettes.',
+  },
 ];
 
 export const STATS = [
-  { value: '6', label: 'PDF Themes' },
-  { value: '100%', label: 'Vector Output' },
-  { value: 'Puppeteer', label: 'Headless Engine' },
-  { value: '∞', label: 'Free to Use' },
+  { value: '100%', label: 'Vector PDF Quality' },
+  { value: '5', label: 'Paper Sizes (A3–Legal)' },
+  { value: '6', label: 'Curated Print Themes' },
+  { value: 'v11', label: 'Mermaid Diagram Engine' },
 ];
 
 export const HERO_FEATURE_CHIPS = [
-  'Split editor',
-  'Mermaid 11',
-  'Vector PDF (Puppeteer)',
-  'Cloud Sync',
+  'Headless Chromium Vector Engine',
+  'Mermaid.js v11 Diagrams',
+  'A3, A4, A5, Letter & Legal',
+  'Google Cloud Sync',
+  'Smart Page Breaks',
 ] as const;
 
 export const DEVELOPER = {
   githubUsername: 'taherankhan',
   repoUrl: 'https://github.com/taherankhan/PDF_Generator',
   role: 'Full-Stack Developer',
-  stack: ['React', 'TypeScript', 'Vite', 'Node.js', 'Puppeteer', 'Mermaid'],
+  stack: ['React', 'TypeScript', 'Vite', 'Node.js', 'Puppeteer', 'Mermaid', 'MongoDB'],
 } as const;
 
 export const FOOTER_NAV = [
   { label: 'Features', sectionId: 'lp-features' },
-  { label: 'Use Cases', sectionId: 'lp-usecases' },
-  { label: 'Themes', sectionId: 'lp-themes' },
+  { label: 'Diagrams', sectionId: 'lp-diagrams' },
+  { label: 'Page Setup', sectionId: 'lp-page-setup' },
+  { label: 'Cloud Sync', sectionId: 'lp-cloud-sync' },
+  { label: 'Compare', sectionId: 'lp-compare' },
+  { label: 'Workflow', sectionId: 'lp-workflow' },
+  { label: 'FAQ', sectionId: 'lp-faq' },
 ] as const;
 
 export const themeSwatchBg = (_name: string, bg: string) => bg;
