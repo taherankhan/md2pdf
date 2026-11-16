@@ -87,7 +87,7 @@ export async function generatePdfBuffer(options: GeneratePdfOptions): Promise<Bu
 
     // Inject content into page
     await page.setContent(options.html, {
-      waitUntil: ['load', 'networkidle0'],
+      waitUntil: 'load',
       timeout: 30000,
     });
 

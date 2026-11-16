@@ -148,7 +148,7 @@ async function generatePdfBuffer(options) {
   try {
     await page.setViewport({ width: 1200, height: 1600, deviceScaleFactor: 2 });
     await page.setContent(options.html, {
-      waitUntil: ["load", "networkidle0"],
+      waitUntil: "load",
       timeout: 3e4
     });
     await page.waitForFunction(
