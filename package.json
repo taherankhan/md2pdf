@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "start": "tsx server.js",
     "test": "node test/server-endpoints.test.mjs",
-    "build:server": "esbuild server/app.ts --outfile=server/app.js --bundle --platform=node --format=esm --external:mongodb --external:express --external:cors --external:express-rate-limit",
+    "build:server": "esbuild server/app.ts --outfile=server/app.js --bundle --platform=node --format=esm --external:mongodb --external:express --external:cors --external:express-rate-limit --external:puppeteer-core",
     "init-db": "node scripts/init-mongodb.mjs"
   },
   "dependencies": {
@@ -52,6 +52,7 @@
     "prism-react-renderer": "2.0.5",
     "prism-themes": "1.9.0",
     "prismjs": "^1.30.0",
+    "puppeteer-core": "^25.17.0",
     "qs": "^6.15.2",
     "react": "^18.2.0",
     "react-apexcharts": "1.4.0",

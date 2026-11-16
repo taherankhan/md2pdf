@@ -441,6 +441,55 @@ const defaultOptions: PDFOptions = {
 };
 
 /**
+ * Attempts to generate and directly download a 100% vector PDF via the server's Headless Chromium (Puppeteer) engine.
+ * Returns true if successful, or false to trigger the client-side fallback.
+ */
+async function downloadViaPuppeteerBackend(
+  fullHtml: string,
+  filename: string,
+  margins: PdfMargins,
+  smartPageBreaks: boolean
+): Promise<boolean> {
+  try {
+    const response = await fetch('/api/pdf/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        html: fullHtml,
+        title: filename.replace(/\.pdf$/i, ''),
+        margins,
+        smartPageBreaks,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('[Puppeteer Backend] Server returned non-200, falling back to client generator');
+      return false;
+    }
+
+    const blob = await response.blob();
+    if (!blob || blob.size === 0) {
+      return false;
+    }
+
+    const blobUrl = window.URL.createObjectURL(blob);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = blobUrl;
+    downloadLink.download = filename;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+    return true;
+  } catch (error) {
+    console.warn('[Puppeteer Backend] Request failed, falling back to client generator:', error);
+    return false;
+  }
+}
+
+/**
  * Generate PDF from markdown content
  */
 export const generatePDFFromMarkdown = async (
@@ -533,6 +582,19 @@ export const generatePDFFromMarkdown = async (
     await new Promise((resolve) => setTimeout(resolve, 300));
     await processSandboxImages(sandboxDoc);
 
+    // 1. High-fidelity Vector PDF via Puppeteer Backend
+    const fullHtml = sandboxDoc.documentElement.outerHTML;
+    const downloadedViaPuppeteer = await downloadViaPuppeteerBackend(
+      fullHtml,
+      opts.filename || 'document.pdf',
+      margins,
+      opts.smartPageBreaks ?? true
+    );
+    if (downloadedViaPuppeteer) {
+      return;
+    }
+
+    // 2. Client-side fallback if backend is offline/unreachable
     const contentEl = sandboxDoc.getElementById('pdf-content');
     if (!contentEl) {
       throw new PdfExportError('RENDER_FAILED', 'Content element not found.');
@@ -677,6 +739,19 @@ export const generatePDFFromElement = async (
     await new Promise((resolve) => setTimeout(resolve, 300));
     await processSandboxImages(sandboxDoc);
 
+    // 1. High-fidelity Vector PDF via Puppeteer Backend
+    const fullHtml = sandboxDoc.documentElement.outerHTML;
+    const downloadedViaPuppeteer = await downloadViaPuppeteerBackend(
+      fullHtml,
+      opts.filename || 'document.pdf',
+      margins,
+      opts.smartPageBreaks ?? true
+    );
+    if (downloadedViaPuppeteer) {
+      return;
+    }
+
+    // 2. Client-side fallback if backend is offline/unreachable
     const contentEl = sandboxDoc.getElementById('pdf-content');
     if (!contentEl) {
       throw new PdfExportError('RENDER_FAILED', 'Content element not found.');

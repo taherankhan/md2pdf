@@ -32,8 +32,8 @@ const FEATURES: Feature[] = [
   {
     num: '03',
     tag: 'Output',
-    title: 'PDF, Markdown & HTML',
-    desc: 'Export menu with PDF as default, plus .md and themed HTML. Mermaid diagrams render in preview and exports.',
+    title: 'Puppeteer Vector PDF Engine',
+    desc: 'High-fidelity PDF export powered by Headless Chromium. Produces selectable vector text, clickable links, flawless multi-page layouts, and crisp Mermaid diagrams at any zoom level.',
     accent: 'amber',
     visual: 'export',
   },

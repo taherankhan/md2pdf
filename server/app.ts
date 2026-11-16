@@ -3,6 +3,7 @@ import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDb } from './db.js';
+import { generatePdfBuffer } from './pdfService.js';
 import {
   verifyGoogleIdToken,
   createSessionToken,
@@ -58,8 +59,9 @@ const app: Express = express();
 // Trust proxy for rate limiting behind reverse proxies / Vercel
 app.set('trust proxy', 1);
 
-// JSON body parser with 2MB limit
-app.use(express.json({ limit: '2mb' }));
+// JSON body parser with 25MB limit for rich documents and diagrams
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // CORS headers
 app.use(cors({ origin: true, credentials: true }));
@@ -127,6 +129,38 @@ apiRouter.get('/health', (_req: Request, res: Response) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
+});
+
+// ==============================================================================
+// PDF GENERATION ROUTES (PUPPETEER HEADLESS CHROMIUM)
+// ==============================================================================
+
+// POST /pdf/generate - High-fidelity vector PDF generation
+apiRouter.post('/pdf/generate', async (req: Request, res: Response) => {
+  try {
+    const { html, title, margins, smartPageBreaks } = req.body || {};
+    if (!html || typeof html !== 'string') {
+      return res.status(400).json({ error: 'HTML content string is required for PDF generation.' });
+    }
+
+    const pdfBuffer = await generatePdfBuffer({
+      html,
+      title: title || 'document',
+      margins,
+      smartPageBreaks,
+    });
+
+    const safeFilename = (title || 'document').replace(/[^a-zA-Z0-9_\-\. ]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.status(200).send(pdfBuffer);
+  } catch (error) {
+    console.error('[puppeteer pdf generation error]:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Server PDF generation failed.',
+    });
+  }
 });
 
 // ==============================================================================

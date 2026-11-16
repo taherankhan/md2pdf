@@ -68,29 +68,29 @@ export const THEMES: PdfTheme[] = [
 export const STEPS: WorkflowStep[] = [
   { num: '1', title: 'Write or upload', desc: 'Type markdown directly or upload a .md file to start.' },
   { num: '2', title: 'Edit & preview', desc: 'Switch Edit, Split, or Preview — format bar and Mermaid in the pane.' },
-  { num: '3', title: 'Theme & share', desc: 'Pick a PDF theme; optional cloud link with live sync and document title.' },
-  { num: '4', title: 'Export', desc: 'Download PDF (default), Markdown, or HTML — rendered in your browser.' },
+  { num: '3', title: 'Theme & customize', desc: 'Pick from 6 curated themes with custom 4-sided margins and smart page breaks.' },
+  { num: '4', title: 'Vector PDF Export', desc: 'Download book-grade vector PDF generated via Puppeteer Chromium engine, Markdown, or HTML.' },
 ];
 
 export const STATS = [
   { value: '6', label: 'PDF Themes' },
-  { value: '100%', label: 'Browser-Based' },
-  { value: '3', label: 'Export Formats' },
+  { value: '100%', label: 'Vector Output' },
+  { value: 'Puppeteer', label: 'Headless Engine' },
   { value: '∞', label: 'Free to Use' },
 ];
 
 export const HERO_FEATURE_CHIPS = [
   'Split editor',
-  'Mermaid',
+  'Mermaid 11',
+  'Vector PDF (Puppeteer)',
   'Cloud Sync',
-  'PDF · MD · HTML',
 ] as const;
 
 export const DEVELOPER = {
   githubUsername: 'taherankhan',
   repoUrl: 'https://github.com/taherankhan/PDF_Generator',
   role: 'Full-Stack Developer',
-  stack: ['React', 'TypeScript', 'Vite', 'jsPDF', 'Marked'],
+  stack: ['React', 'TypeScript', 'Vite', 'Node.js', 'Puppeteer', 'Mermaid'],
 } as const;
 
 export const FOOTER_NAV = [

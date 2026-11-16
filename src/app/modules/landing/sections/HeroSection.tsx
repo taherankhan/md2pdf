@@ -50,7 +50,7 @@ const HeroSection: FC<Props> = ({ selectedTheme, onThemeChange }) => {
               aria-hidden="true"
             />
             <span className={`lp-hero-kicker-label ${anim('lp-anim-kicker lp-anim-d5')}`}>
-              client-side
+              vector pdf · puppeteer
             </span>
           </div>
 
@@ -66,8 +66,7 @@ const HeroSection: FC<Props> = ({ selectedTheme, onThemeChange }) => {
 
           {/* ── Subtitle (no entrance animation — Lighthouse LCP element) */}
           <p className="lp-hero-sub">
-            CodeMirror editor with Edit, Split, and Preview, Mermaid diagrams, and export to PDF,
-            Markdown, or HTML. Free to start — sharing is optional and only when you create a link.
+            Next-generation Markdown studio with live split preview, native Mermaid diagrams, and high-precision vector PDF export powered by Headless Chromium. Crystal-clear text, perfect page breaks, and zero image slicing.
           </p>
 
           <ul className="lp-hero-chips" aria-label="Editor highlights">
